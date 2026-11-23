@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import {
   assertCaptionStyle,
@@ -24,6 +25,7 @@ import { ChannelSpikeDetector } from "../detect/spikes";
 import { renderVerticalShort } from "../export/render";
 import { StreamCapture } from "../media/capture";
 import { transcribeClip } from "../ai/transcribe";
+import { writeTitles } from "../ai/titles";
 import { FacecamDetector, shouldUseFacecam } from "../detect/facecam";
 import type { ClipperRepository } from "../repo/interface";
 import { selectStreams } from "./select";
@@ -255,9 +257,11 @@ export class AutoPipeline {
     }
     try {
       let words: TimedWord[] = [];
+      let transcriptText = "";
       try {
         const transcript = await transcribeClip(sourcePath);
         words = transcript.words;
+        transcriptText = transcript.text;
         if (transcript.text) {
           log.info(
             { channel: moment.channelLogin, words: words.length },
@@ -270,6 +274,31 @@ export class AutoPipeline {
           "Transcription skipped; rendering without captions",
         );
       }
+      const streamTitle =
+        this.selected.find((stream) => normalizeLogin(stream.streamerLogin) === moment.channelLogin)
+          ?.title ?? "";
+      const packs = await writeTitles({
+        planId: settings.planId,
+        transcript: transcriptText,
+        streamTitle,
+        channelLogin: moment.channelLogin,
+        reasons: moment.reasons,
+      });
+      const hook = packs[0]?.title ?? hookTitle;
+      record.hookTitle = hook;
+      if (layout.layout === "blurred-background") {
+        layout = { layout: "blurred-background", hookTitle: hook };
+      }
+      const sidecar = `${base}.json`;
+      await writeSidecar(sidecar, {
+        clipId: record.id,
+        channelLogin: moment.channelLogin,
+        hookTitle: hook,
+        hashtags: packs[0]?.hashtags ?? [],
+        titleSource: packs[0]?.source ?? "template",
+        transcript: transcriptText,
+        layout: layout.layout,
+      });
       await renderVerticalShort({
         inputPath: sourcePath,
         outputPath,
@@ -329,4 +358,9 @@ function extractPng(videoPath: string, pngPath: string, atSeconds: number): Prom
     });
     child.on("error", reject);
   });
+}
+
+async function writeSidecar(filePath: string, payload: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(payload, null, 2));
 }
