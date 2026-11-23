@@ -50,3 +50,6 @@ coverage/
 .turbo/
 
 .eslintcache
+
+# local pipeline state (never commit)
+data/

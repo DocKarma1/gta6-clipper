@@ -11,6 +11,8 @@ export default tseslint.config(
       "coverage/**",
       "package-lock.json",
       "**/next-env.d.ts",
+      "**/.venv/**",
+      "**/data/**",
     ],
   },
   eslint.configs.recommended,

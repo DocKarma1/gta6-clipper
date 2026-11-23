@@ -57,3 +57,11 @@ export {
   type VerticalLayout,
   type VerticalLayoutId,
 } from "./video";
+
+export {
+  getAutoSettings,
+  resetAutoSettingsCache,
+  normalizeLogin,
+  type AutoSettings,
+} from "./auto-settings";
+export type { CandidateMoment, ChatEvent, ClipRecord, WatchedStream } from "./moments";
