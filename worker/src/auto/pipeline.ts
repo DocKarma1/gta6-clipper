@@ -7,6 +7,7 @@ import {
   assertClipsThisMonth,
   capConcurrentStreams,
   getLogger,
+  isChannelAllowed,
   normalizeLogin,
   PlanLimitError,
   startOfUtcMonth,
@@ -15,6 +16,7 @@ import {
   type CandidateMoment,
   type ClipRecord,
   type CropRect,
+  type EffectivePermissionPolicy,
   type LiveStream,
   type TimedWord,
   type VerticalLayout,
@@ -28,6 +30,7 @@ import { transcribeClip } from "../ai/transcribe";
 import { writeTitles } from "../ai/titles";
 import { FacecamDetector, shouldUseFacecam } from "../detect/facecam";
 import type { ClipperRepository } from "../repo/interface";
+import { loadPermissionPolicy, type PermissionSource } from "../permissions/source";
 import { selectStreams } from "./select";
 
 const log = getLogger("worker.auto");
@@ -38,6 +41,8 @@ export type PipelineOptions = {
   facecamByChannel?: Record<string, CropRect>;
   facecamDetector?: FacecamDetector;
   sampleOutputDir?: string;
+  /** Receipts and the workspace requirePermission toggle. Defaults to env only. */
+  permissions?: PermissionSource;
 };
 
 export class AutoPipeline {
@@ -49,10 +54,16 @@ export class AutoPipeline {
   private pruneTimer: NodeJS.Timeout | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
   private running = false;
+  private policy: EffectivePermissionPolicy;
   readonly moments: CandidateMoment[] = [];
   readonly clips: ClipRecord[] = [];
 
   constructor(private readonly options: PipelineOptions) {
+    this.policy = {
+      requirePermission: options.settings.requirePermission,
+      permittedChannels: options.settings.permittedChannels.map(normalizeLogin),
+      source: "env",
+    };
     this.facecam =
       options.facecamDetector ??
       new FacecamDetector({
@@ -79,7 +90,9 @@ export class AutoPipeline {
     log.info(
       {
         topK: this.options.settings.topK,
-        requirePermission: this.options.settings.requirePermission,
+        requirePermission: this.policy.requirePermission,
+        requirePermissionSource: this.policy.source,
+        permittedChannels: this.policy.permittedChannels.length,
         writeLocalOnly: this.options.settings.writeLocalOnly,
         pollIntervalMs: this.options.settings.pollIntervalMs,
       },
@@ -100,12 +113,40 @@ export class AutoPipeline {
     return this.selected.map((stream) => stream.streamerLogin);
   }
 
+  getPermissionPolicy(): EffectivePermissionPolicy {
+    return this.policy;
+  }
+
+  private async refreshPolicy(): Promise<void> {
+    if (!this.options.permissions) return;
+    const previous = this.policy;
+    this.policy = await loadPermissionPolicy(this.options.permissions, this.options.settings);
+    if (
+      previous.requirePermission !== this.policy.requirePermission ||
+      previous.permittedChannels.join(",") !== this.policy.permittedChannels.join(",")
+    ) {
+      log.info(
+        {
+          requirePermission: this.policy.requirePermission,
+          source: this.policy.source,
+          permittedChannels: this.policy.permittedChannels,
+        },
+        "Permission policy changed",
+      );
+    }
+  }
+
   private async refreshSelection(): Promise<void> {
     try {
+      await this.refreshPolicy();
       const live = await getLiveGta6Streams({ skipCache: true });
       const next = capConcurrentStreams(
         this.options.settings.planId,
-        selectStreams(live.streams, this.options.settings),
+        selectStreams(live.streams, {
+          ...this.options.settings,
+          requirePermission: this.policy.requirePermission,
+          permittedChannels: this.policy.permittedChannels,
+        }),
       );
       this.selected = next;
       const logins = next.map((stream) => normalizeLogin(stream.streamerLogin));
@@ -168,6 +209,14 @@ export class AutoPipeline {
     await delay(settings.postRollSeconds * 1000);
     const capture = this.captures.get(moment.channelLogin);
     if (!capture) return;
+    await this.refreshPolicy();
+    if (!isChannelAllowed(this.policy, moment.channelLogin)) {
+      log.info(
+        { channel: moment.channelLogin },
+        "Skipped a clip because permission is required and not granted (or was revoked)",
+      );
+      return;
+    }
     const peak = Date.parse(moment.peakAt);
     const startMs = peak - settings.preRollSeconds * 1000;
     const endMs = peak + settings.postRollSeconds * 1000;

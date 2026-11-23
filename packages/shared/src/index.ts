@@ -89,3 +89,29 @@ export {
   evaluatePlanGate,
   type PlanUsage,
 } from "./plan-gates";
+
+export {
+  PERMISSION_METHODS,
+  PERMISSION_METHOD_LABELS,
+  PERMISSION_STATUSES,
+  REQUIRE_PERMISSION_WARNING,
+  TWITCH_LOGIN_PATTERN,
+  channelLoginSchema,
+  grantPermissionInputSchema,
+  grantedLogins,
+  hasEvidence,
+  isChannelAllowed,
+  resolvePermissionPolicy,
+  revokePermissionInputSchema,
+  statusFor,
+  type EffectivePermissionPolicy,
+  type GrantPermissionInput,
+  type PermissionMethod,
+  type PermissionReceipt,
+  type PermissionStatus,
+  type RevokePermissionInput,
+  type StoredPermissionStatus,
+} from "./permissions";
+export { LocalPermissionStore } from "./permission-store-local";
+export type { Database, Json } from "./database.types";
+export { receiptFromRow, type PermissionReceiptRow } from "./permission-rows";

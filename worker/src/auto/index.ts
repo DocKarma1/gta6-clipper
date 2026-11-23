@@ -1,5 +1,6 @@
 import { getAutoSettings, getLogger, getTwitchCredentials } from "@gta6-clipper/shared";
 import { createClipperRepository } from "../repo/create";
+import { createPermissionSource, loadPermissionPolicy } from "../permissions/source";
 import { AutoPipeline } from "./pipeline";
 
 const log = getLogger("worker.auto");
@@ -7,9 +8,11 @@ const log = getLogger("worker.auto");
 async function main(): Promise<void> {
   getTwitchCredentials();
   const settings = getAutoSettings();
-  if (settings.requirePermission && settings.permittedChannels.length === 0) {
+  const permissions = createPermissionSource(settings);
+  const policy = await loadPermissionPolicy(permissions, settings);
+  if (policy.requirePermission && policy.permittedChannels.length === 0) {
     log.warn(
-      "requirePermission is true and AUTO_PERMITTED_CHANNELS is empty, so no streams will be watched. Set permitted channels, or explicitly set AUTO_REQUIRE_PERMISSION=false for a local write-only test run.",
+      "requirePermission is on and no streamer has a granted permission receipt, so no streams will be watched. Record receipts on /permissions, or switch requirePermission off on /settings.",
     );
   }
   const repository = createClipperRepository(settings.dataDir);
@@ -17,6 +20,7 @@ async function main(): Promise<void> {
   const pipeline = new AutoPipeline({
     settings,
     repository,
+    permissions,
     ...(sampleOutputDir ? { sampleOutputDir } : {}),
   });
   const shutdown = async () => {
