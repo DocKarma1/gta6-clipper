@@ -14,7 +14,8 @@ gta6-clipper/
 ├── packages/
 │   ├── shared/               # Config, logger, typed errors, domain types
 │   └── twitch/               # Twitch Helix client, schemas, and radar query
-├── worker/                   # Always-on job runner (ffmpeg, chat, Whisper)
+├── worker/                   # Auto worker on the owner's PC (capture, chat, ffmpeg, Whisper, Ollama)
+├── supabase/migrations/      # Postgres schema + RLS (applied to the gta6-clipper project)
 ├── docs/                     # Project plan and this document
 ├── .env.example              # Names of env vars — no secrets
 └── .env.local                # Real secrets, repo root, never committed
@@ -40,6 +41,32 @@ Environment loading: Next.js reads `apps/web/.env.local`, which is a symlink to 
 5. Zod parses every Helix payload. The page shows an empty state, a ranked stream list, or a safe error message.
 6. `GET /api/streams` exposes the same result as JSON for later client refresh.
 
+## Hosting
+
+The owner's own PC is the server. `npm run dev` / `npm run start` (web) and `npm run auto --workspace=worker` (worker) run side by side on it; Supabase (auth + Postgres) and Twitch Helix are the only cloud services. A VPS is optional and runs the same commands. Setup, autostart and resume are in [SELF_HOST.md](SELF_HOST.md).
+
+## Auto worker pipeline (current)
+
+```
+Helix (watchlist + GTA VI directory) ──► selectStreams (≤ 3)
+   │
+   ├─► StreamCapture per stream: streamlink → ffmpeg segment muxer (6 s .ts + CSV timing, 150 s ring buffer)
+   ├─► Anonymous IRC ──► ChannelSpikeDetector (1 s bins, baseline, distinct users, peak/onset)
+   │                 └─► QuestionReplyDetector (broadcaster "?" messages + spoken questions)
+   └─► Speech sampler: last ~35 s audio → faster-whisper tiny → findSpokenQuestions
+           │
+   moment ─► window (pre/post-roll, chat delay) ─► dedupe ─► plan limits ─► wait for buffer
+           ─► extractWindow ─► runClipJob (render semaphore = 1):
+                silence/scene snap → facecam consensus → transcript (aligned to trim)
+                → Ollama titles (template fallback) → render (.partial.mp4 → rename)
+                → peak thumbnail → LUFS check → sidecar JSON → SQLite / Supabase row
+```
+
+- **Selection:** watchlisted streamers live in GTA VI (GTA V too if `AUTO_INCLUDE_GTA_V=true`) by watchlist priority then viewers, then the rest by viewers. Cap = `min(AUTO_TOP_K, plan streams, AUTO_MAX_CONCURRENT=3)`.
+- **No permission gate.** Every clip gets a streamer credit overlay.
+- **Storage:** local SQLite (`clipper.sqlite` in `AUTO_DATA_DIR`) by default; Supabase when `SUPABASE_SERVICE_ROLE_KEY` and `AUTO_WORKSPACE_ID` are set. Highlight timestamps (`event_at`, `peak_at`, `highlight_start_at/end_at`, `peak_offset_seconds`, `hype_score`, `clip_type`) are stored in both and in the sidecar JSON next to each MP4.
+- **AI text:** Ollama only (`OLLAMA_URL`, `OLLAMA_MODEL`), Zod-validated JSON, en/sv templates as fallback. Transcription is faster-whisper.
+
 ## How later phases plug in
 
 Phase numbers match `docs/PROJECT_PLAN.md` (the plan's phases 2–8; treat any "phase 9" as launch hardening after billing).
@@ -52,4 +79,4 @@ Phase numbers match `docs/PROJECT_PLAN.md` (the plan's phases 2–8; treat any "
 - **Phase 7 (auto-post).** Add official destination clients (`packages/youtube` upload, later Meta and TikTok) called from `worker/src` publish jobs after Clip Queue approval. API review state lives in the database; the UI only reflects it.
 - **Phase 8 (billing and launch).** Stripe webhooks in `apps/web/app/api`, plan gates in the server layer, and a move off Vercel Hobby before the first real charge. Worker and Helix code should not need to change.
 
-Rules that stay true in every phase: official APIs only, a visible streamer credit on every clip (the auto worker has no approval gate, so the operator carries the copyright/DMCA risk of what they publish), media work stays on the VPS, and secrets never appear in logs, HTML, or git.
+Rules that stay true in every phase: official APIs only, a visible streamer credit on every clip (the auto worker has no approval gate, so the operator carries the copyright/DMCA risk of what they publish), media work stays in the worker (the owner's PC by default, a VPS only if chosen), and secrets never appear in logs, HTML, or git.

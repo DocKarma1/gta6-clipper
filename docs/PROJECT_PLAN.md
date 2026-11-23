@@ -44,7 +44,7 @@ Kick, YouTube Live directory support, and third-party cloud-drive sync (Google D
 ### Non-goals
 
 - Redeploying or forking another vendor's app as a competing service.
-- Clipping a stream or video without a recorded permission confirmation from the operator.
+- A per-stream permission or consent flow in the app (owner decision, November 2026: no approval gate; every clip keeps a visible streamer credit and the operator carries the copyright/DMCA risk).
 
 ---
 
@@ -101,7 +101,7 @@ YouTube Partner Program context for customers (not a product feature): as of mid
 
 ## 4. Architecture
 
-Video work does **not** run on Vercel serverless. Next.js stays a thin web app. Long-lived sockets, stream capture, ffmpeg, and Whisper run on an always-on worker VPS next to a job queue and local Redis.
+Video work does **not** run on Vercel serverless. Next.js stays a thin web app. Long-lived sockets, stream capture, ffmpeg, Whisper and Ollama run in the worker on **the owner's own PC** (the default server, see [SELF_HOST.md](SELF_HOST.md)). A rented VPS is **optional** — only if the PC cannot stay on or a customer needs clips while it is off. Redis/BullMQ are optional too; the current worker keeps its queue in-process with SQLite.
 
 ```mermaid
 flowchart TB
@@ -116,17 +116,17 @@ flowchart TB
   subgraph data [Data plane — prefer free tiers]
     SB[Supabase Auth + Postgres]
     R2[Cloudflare R2 object storage]
-    Redis[Redis on the worker VPS]
+    Redis[Redis — optional]
   end
 
-  subgraph vps [Always-on worker VPS — unavoidable paid cost]
-    APIQ[BullMQ workers]
+  subgraph vps [Worker on the owner's PC — VPS optional]
+    APIQ[In-process queue + SQLite]
     Chat[Twitch chat ingest<br/>IRC and or EventSub]
     Detect[Spike detector + hype score]
     Capture[streamlink / yt-dlp]
     FF[ffmpeg: cut, 9:16, captions, 1080p]
     STT[faster-whisper or whisper.cpp]
-    LLM[Local LLM or free-tier API]
+    LLM[Ollama, local — template fallback]
   end
 
   subgraph ext [External APIs]
@@ -158,9 +158,9 @@ flowchart TB
 ### Request flow, short version
 
 1. The web app polls or caches Twitch Helix `Get Streams` filtered by the GTA 6 category and shows Live Radar.
-2. When a user starts clipping a stream (and has confirmed permission), a worker joins that chat and optionally records a rolling media buffer.
+2. The worker picks up to 3 streams (watchlisted streamers live in GTA VI first, then top viewers), joins their chat and records a rolling media buffer.
 3. The spike detector emits candidate windows with a hype score into the queue.
-4. A media worker pulls a few seconds before and after the spike, reframes to 9:16, transcribes the clip (not the whole stream), burns captions, asks the LLM for a title and hashtags, and writes a 1080p MP4 to R2.
+4. A media worker pulls a few seconds before and after the spike, reframes to 9:16, transcribes the clip (not the whole stream), burns captions, asks Ollama for a title and hashtags, and writes a 1080p MP4 locally (R2 upload is optional later).
 5. The Clip Queue lists the result for review. Download uses a short-lived signed R2 URL. Studio auto-post jobs run only after approval (and after the destination API is authorized).
 
 ---
@@ -177,12 +177,12 @@ Lean toward Next.js, TypeScript, and a Vercel-style frontend, but **do not** put
 | Web host (once selling) | **Cloudflare Pages** (preferred to stay cheap) or **Vercel Pro** (~$20/mo — verify [vercel.com/pricing](https://vercel.com/pricing) at purchase time) | Pages is a free-tier alternative for the frontend. Next.js on Pages may need an adapter (OpenNext or equivalent); budget a short port if you start on Vercel. | Prefer Pages at $0 within plan limits. Use Vercel Pro only if you want to stay on Vercel. |
 | Auth + database | **Supabase** (Auth + Postgres) | Auth, Google / Twitch OAuth, and a relational store in one free project. Avoid a paid auth vendor at the start. | Free plan: $0, 50,000 MAU, 500 MB database, 1 GB file storage, 5 GB egress, 2 active projects. **Free projects pause after 1 week of inactivity** — fine for early build if you keep using it; not fine as the only production box once customers rely on it. Upgrade to Pro (from $25/mo) only when pause risk, disk, or egress requires it. Neon is a reasonable Postgres-only alternative if you later split auth. |
 | Object storage | **Cloudflare R2** | No egress fees; official free tier is enough for early clips. | Free monthly: **10 GB-month** storage, **1 million Class A** (write/list) operations, **10 million Class B** (read) operations, **egress $0**. Overage: $0.015/GB-month, $4.50/million Class A, $0.36/million Class B ([R2 pricing](https://developers.cloudflare.com/r2/pricing/)). |
-| Queue + Redis | **BullMQ + Redis** installed on the worker VPS | No separate Redis bill. Upstash is optional later, not required. | Included in the VPS cost. |
-| Worker runtime | Node.js (TypeScript) plus Python for Whisper | TypeScript for jobs and APIs; Python for `faster-whisper`. | Runs on the VPS. |
+| Queue | In-process queue + SQLite on the worker PC (BullMQ + Redis optional later) | No separate Redis bill. | $0. |
+| Worker runtime | Node.js (TypeScript) plus Python for Whisper | TypeScript for jobs and APIs; Python for `faster-whisper`. | Runs on the owner's PC (VPS optional). |
 | Media ingest | **streamlink** (live Twitch), **yt-dlp** (YouTube import) | Open-source, no vendor lock-in. | Free software. ToS risk is documented in Section 13 — only ingest streams and videos the operator is allowed to use. |
 | Video pipeline | **ffmpeg** | Cut, scale, crop, burn captions, AAC/H.264 1080×1920. | Free software. CPU-only is enough for this pipeline. **No GPU requirement for v1.** |
-| Transcription | **Self-hosted faster-whisper** (primary), **whisper.cpp** as a C++/CPU alternative | Avoid Deepgram / AssemblyAI / paid Whisper APIs. Transcribe **only the cut clip** (typically 15–60 seconds), never the entire live stream or 6-hour VOD. | $0 software cost. Uses VPS CPU. Start with the `small` or `base` model on CPU; move to a cheap GPU box only if queue latency demands it. |
-| Titles / hashtags | **Local LLM** (Ollama, for example Llama 3.2 or Qwen 2.5 Instruct, 1B–8B) with an optional **free-tier fallback** (Groq, Google Gemini, or similar — confirm current free allowances before relying on them) | No per-clip LLM invoice in the default path. | $0 if it stays on the VPS and fits in RAM. An 8B model will likely need the larger VPS mentioned in Costs. |
+| Transcription | **Self-hosted faster-whisper** (primary), **whisper.cpp** as a C++/CPU alternative | Avoid Deepgram / AssemblyAI / paid Whisper APIs. Transcribe **only the cut clip** (typically 15–60 seconds), never the entire live stream or 6-hour VOD. | $0 software cost. Uses the PC's CPU. Start with the `small` or `base` model on CPU; move to a cheap GPU box only if queue latency demands it. |
+| Titles / hashtags | **Ollama** on the same PC (`OLLAMA_URL`, `OLLAMA_MODEL`, default `llama3.2:3b`; `qwen2.5:3b`, `llama3.2:1b`, `qwen2.5:7b` documented) with a built-in **template fallback** when Ollama is down | All AI text goes through Ollama. No per-clip LLM invoice. | $0. A 3B model needs ~3 GB RAM; 7–8B ~6–8 GB. |
 | Payments | **Stripe** (or equivalent) when you are ready to charge | No monthly platform fee on standard Stripe; you pay per successful charge. | See Costs. Do not enable checkout until the web host allows commercial use. |
 | Twitch data | **Helix** for the directory; **IRC and/or EventSub** `channel.chat.message` for chat | Official, no usage fee. | $0. Helix is commonly rate-limited around **800 points/minute** per Client ID (confirm against response headers `Ratelimit-Limit` / `Ratelimit-Remaining`). EventSub cost limits differ for app vs user tokens. |
 | YouTube | **Data API v3** for upload and metadata; **yt-dlp** for permitted VOD ingest | Official upload path; ingest is a ToS-sensitive implementation detail. | $0 within quota. |
@@ -207,7 +207,7 @@ Lean toward Next.js, TypeScript, and a Vercel-style frontend, but **do not** put
   `rank = w1 * log1p(viewers) + w2 * hype_score`  
   where `hype_score` comes from recent chat spikes on streams you are already allowed to monitor. Streams not being clipped can still appear, ranked mainly by viewers, with hype marked "unknown" until a worker is attached.
 - Show title, streamer, viewers, language, uptime, and a hype badge when available.
-- Before a user can attach a clipper to someone else's stream, require an explicit permission confirmation (checkbox + stored audit record: who confirmed, when, which stream or video, which workspace). Offer a clear path for "this is my own channel" via Twitch OAuth.
+- No permission page or approval gate (owner decision). Every clip carries a visible streamer credit overlay. The `permission_receipts` table stays in the schema for a possible future opt-in record but nothing requires it.
 
 ### 6.2 Chat ingest and spike detection
 
@@ -237,14 +237,14 @@ Audio-energy peaks are a useful second signal once a rolling buffer exists, but 
 - **Action-following crop:** estimate motion (ffmpeg `cropdetect` is not enough; use a lightweight CPU method such as frame differencing / optical-flow centroid, or a small OpenCV tracker on downscaled frames) and ease the 9:16 window toward the motion centroid, with damping so the frame does not jitter. This can ship in a later phase after static crop works.
 - Export: H.264 + AAC, 1080×1920, 30 or 60 fps to match the source when practical, no watermark, loudness roughly normalized.
 
-ffmpeg, streamlink, and yt-dlp must run on the VPS. They will not fit Vercel function time, size, or filesystem limits.
+ffmpeg, streamlink, and yt-dlp must run in the worker (the owner's PC by default, a VPS optionally). They will not fit Vercel function time, size, or filesystem limits.
 
 ### 6.4 AI captions, titles, and hashtags
 
 - Transcribe the **exported clip audio** with faster-whisper, requesting word timestamps.
 - Burn captions with ffmpeg (`drawtext` or a generated ASS/SRT). Ship 4 styles on Starter and 8 on Pro/Studio (for example: center-safe, lower-third, word-by-word highlight, high-contrast boxed, minimal, all-caps meme, two-line stacked, brand-colour accent). Let Pro/Studio set a primary/secondary colour.
 - Feed the transcript plus stream title, spike keywords, and target platform into the local LLM. Ask for a title, a short description, and a hashtag set **per platform** (YouTube, TikTok, Instagram, Facebook). Show them in the queue as editable text — never post unreviewed AI copy on day one. Studio auto-post should still require a first-time "auto-approve titles above confidence X" setting, default off.
-- If the VPS cannot host a usable LLM, call a free-tier API and fail soft (queue the clip with a placeholder title from the top transcript line).
+- If Ollama is not running or returns invalid JSON (validated with Zod, with timeouts and retries), fail soft to the built-in en/sv templates.
 
 ### 6.5 Clip Queue, export, and auto-post
 
@@ -293,8 +293,10 @@ Ship incrementally. Do not hold Phase 3 behind TikTok audit approval.
 
 ### Worker machine
 
-- Always-on Linux VPS in a region close to the operator or to Twitch ingest.
-- OS packages: `ffmpeg`, `python3`, `streamlink`, `yt-dlp`, Redis, Node.js.
+- **Default: the owner's own PC** (Windows, macOS or Linux). See [SELF_HOST.md](SELF_HOST.md) for setup, autostart and resume after the PC was off.
+- **Optional:** an always-on Linux VPS close to Twitch ingest, only if the PC cannot stay on.
+- Software: Node.js 22+, `ffmpeg`, Python 3 venv with `faster-whisper`, `streamlink`, Ollama. Redis and `yt-dlp` only if you add BullMQ or VOD import.
+- Default load: 2–3 streams at once (hard cap 3) and one render at a time.
 - Disk: ephemeral buffer plus model weights (`small` Whisper is on the order of a few hundred MB; keep headroom). Prefer a volume or a box larger than the cheapest 40 GB plan once models and clip scratch space coexist.
 - CPU-first. Add a GPU only if clip queue time (Whisper + motion crop) regularly exceeds the "still live" goal.
 
@@ -313,7 +315,7 @@ The web app enqueues work and reads status from Postgres / Redis / R2.
 
 These are product requirements, not optional polish:
 
-1. **Streamer and rights-holder permission.** The operator must confirm they may clip the stream or video (own channel, written permission, or a paid clipping campaign). Store that confirmation. Default-deny attach and import.
+1. **Streamer credit and operator responsibility.** There is no in-app permission gate (owner decision). Every clip shows the streamer's name, and the operator carries the copyright/DMCA risk of what they publish. Remove a streamer from the watchlist on request.
 2. **No unofficial access.** Official APIs and the user's own OAuth tokens only. No session-cookie uploads, no unofficial mobile endpoints, no credential stuffing, no DRM circumvention.
 3. **Trademark.** The product may describe GTA 6 as the content category. It must not present itself as a Rockstar or Take-Two product.
 4. **Platform rules.** Twitch, YouTube, TikTok, and Meta terms apply to ingest and to posts. yt-dlp / streamlink use must stay within what those terms and local law allow for content the operator already has a right to use.
@@ -325,7 +327,7 @@ These are product requirements, not optional polish:
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Copyright and streamer rights — customers clip channels they do not own | High | Permission receipt before attach/import; default off for auto-post; repeat the rule in onboarding and legal pages. |
+| Copyright and streamer rights — customers clip channels they do not own | High | Visible streamer credit on every clip; manual review before posting; auto-post off by default; operator carries the risk; repeat the rule in onboarding and legal pages. |
 | YouTube reused-content / Content ID — especially Shorts over 60 seconds with a claim | High | Default to sub-60s cuts; show claim status if the Data API returns it; do not promise monetization. |
 | TikTok audit delay or rejection (intended-use: no copying arbitrary cross-platform content; no "private upload utility for accounts you manage") | High | Manual download always works; frame Studio as a creator tool with preview and express consent; submit audit with a narrow, accurate demo; keep TikTok last in the auto-post sequence. |
 | Meta App Review / Business Verification delay; IG professional-account requirement | Medium–high | Start review early in Phase 7; explain the professional-account requirement in the UI. |
@@ -335,10 +337,10 @@ These are product requirements, not optional polish:
 | Twitch or YouTube ToS changes around third-party capture tools | High | Official APIs first; be willing to switch ingest methods; never advertise circumvention. |
 | Vercel Hobby used commercially, account paused | High | No checkout on Hobby; move to Cloudflare Pages or Vercel Pro before the first paid customer. |
 | Supabase free project pauses after 7 days idle, or 500 MB / 5 GB egress is exceeded | Medium | Heartbeat during development; upgrade to Supabase Pro only when needed; store media in R2, not Supabase Storage. |
-| CPU Whisper or local LLM too slow with 10 concurrent streams | Medium | Transcribe clips only; cap concurrency; scale the VPS; GPU is a later cost, not a v1 dependency. |
+| CPU Whisper or local LLM too slow with 10 concurrent streams | Medium | Transcribe clips only; cap at 3 streams and 1 render; move to a VPS only if the PC is too slow; GPU is a later cost, not a v1 dependency. |
 | R2 10 GB free tier exhausted (1080p Shorts are often tens of MB each) | Medium | Retention (for example delete source buffers immediately, expire unexported renders, cap per-plan retention days). |
 | Cost overrun if paid AI APIs sneak back in | Medium | Default path is local; paid APIs behind an explicit env flag. |
-| GTA 6 launch traffic spike | Medium | Plan caps exist for this; pre-warm a larger VPS; degrade to fewer concurrent streams rather than melting the box. |
+| GTA 6 launch traffic spike | Medium | Plan caps exist for this; use the 3-stream cap on the PC (or rent a VPS for launch week); degrade to fewer concurrent streams rather than melting the box. |
 
 ---
 
@@ -349,8 +351,8 @@ These are product requirements, not optional polish:
 - **Caption quality:** word-error rate on a small labelled set; user edit rate of captions.
 - **Export reliability:** share of jobs that produce a valid 1080×1920 MP4 without a watermark.
 - **Auto-post reliability:** success rate per platform, time-to-live URL, errors by quota vs auth vs policy.
-- **Permission hygiene:** 100% of non-owned attaches have a stored confirmation; strike or takedown count should stay at zero attributable to missing consent.
-- **Business:** trial-to-paid conversion, monthly churn, gross margin after VPS + storage + payment fees, infrastructure cost per accepted clip.
+- **Takedown hygiene:** every clip has a visible credit; takedown requests are honoured within a day.
+- **Business:** trial-to-paid conversion, monthly churn, gross margin after power/VPS + storage + payment fees, infrastructure cost per accepted clip.
 - **Cost cap:** raw infrastructure (excluding payment fees and your time) should stay far below one Starter subscription in the early months. If it does not, pause feature work and cut retention, concurrency, or model size.
 
 ---
@@ -366,11 +368,11 @@ Prices below were checked in late November 2026 and **will change**. Treat every
 | Twitch Helix, EventSub, IRC | Official, no usage fee | — |
 | YouTube Data API v3 | Official, no usage fee within quota | — |
 | TikTok and Meta posting APIs | Official, no usage fee (review time only) | Unofficial upload tools — do not use |
-| Transcription | faster-whisper / whisper.cpp on the VPS | Deepgram, AssemblyAI, OpenAI (~$0.15–$0.36+/hour of audio at public list rates — unnecessary if you only transcribe short clips locally) |
-| Titles / hashtags | Local LLM or a genuine free-tier API | Per-token paid LLM as the default |
+| Transcription | faster-whisper / whisper.cpp on the owner's PC | Deepgram, AssemblyAI, OpenAI (~$0.15–$0.36+/hour of audio at public list rates — unnecessary if you only transcribe short clips locally) |
+| Titles / hashtags | Ollama on the owner's PC | Per-token paid LLM as the default |
 | Auth + Postgres | Supabase Free | Clerk, a paid auth add-on, or Supabase Pro too early |
 | Object storage | R2 free tier (10 GB, 1M Class A, 10M Class B, $0 egress) | S3 or Vercel Blob as the default |
-| Queue | Redis on the VPS | A hosted Redis bill |
+| Queue | In-process + SQLite (Redis optional) | A hosted Redis bill |
 | Media tools | ffmpeg, streamlink, yt-dlp | A paid transcoding SaaS |
 | Frontend while building (non-commercial) | Vercel Hobby or Cloudflare Pages | Vercel Pro before you need it |
 
@@ -378,16 +380,18 @@ Prices below were checked in late November 2026 and **will change**. Treat every
 
 These are the costs you should expect to pay with real money.
 
-**1. Always-on worker VPS — the one bill you cannot design away**
+**1. Worker host — the owner's PC by default ($0 extra), VPS optional**
 
-ffmpeg, Whisper, Redis, chat sockets, and stream capture need a process that stays up. Serverless will not replace this at any meaningful concurrency.
+ffmpeg, Whisper, Ollama, chat sockets, and stream capture need a process that stays up. Serverless will not replace this. The default is the owner's own PC: no server bill, only electricity (a desktop drawing ~60–120 W while clipping 2–3 streams is roughly 45–90 kWh/month if it runs 24/7, i.e. about $5–15/month at typical Swedish prices, less if it only runs while streamers are live). When the PC is off, nothing is clipped; on restart the worker cleans partial files and continues (see SELF_HOST.md).
+
+A VPS is **optional** — only if you need clipping while the PC is off or more than 3 streams. Reference prices if you do:
 
 - Floor (too small for 10 streams + Whisper, useful for early Phase 2–3): Hetzner Cloud **CX23**-class, roughly **€4/mo net** for 2 vCPU / 4 GB / 40 GB in EU regions (list prices move; confirm in the Hetzner console). US regions cost more.
 - More realistic solo-prod box: **4 vCPU / 8 GB** class (Hetzner **CX33** has been listed around **€6.49/mo net**) or **8 GB–16 GB** if you also run an 8B LLM (**~€12–25/mo net** depending on plan).
 - With EU VAT (for example 25% in Sweden) and backups (~+20% on Hetzner), budget about **$8–30/month** in early production, and **$30–60/month** if you add a second box or a small GPU later.
 - A GPU (Whisper large, or heavy motion models) is **not** required for v1. If CPU queue time becomes the bottleneck, a low-end GPU cloud host is a later estimate of tens of dollars per month, not a launch dependency.
 
-This cost is 24/7 even when no customer is clipping. That is why plan caps and "transcribe the clip, not the stream" matter.
+A VPS bill is 24/7 even when no customer is clipping. That is why plan caps and "transcribe the clip, not the stream" matter.
 
 **2. Domain name**
 
@@ -420,9 +424,9 @@ Use a vendor's free allowance (for example a few thousand messages per month on 
 
 | Stage | What you pay (estimate) | Notes |
 |---|---|---|
-| Solo development, no paying customers, site is not selling | **About $5–15/mo** | Small VPS + domain amortization. Vercel Hobby or Pages, Supabase Free, R2 Free, self-hosted AI, official APIs. |
-| First paying customers, cost-disciplined | **About $10–50/mo + payment fees** | Larger or second VPS is the main swing factor. Prefer Cloudflare Pages ($0) over Vercel Pro ($20). Stay on Supabase Free if it holds. |
-| Uncomfortable but still lean early scale | **About $50–120/mo + payment fees** | Supabase Pro ($25) and/or Vercel Pro ($20) and/or a bigger VPS or GPU. Still avoid per-minute transcription APIs. |
+| Solo development, no paying customers, site is not selling | **About $0–5/mo** (plus PC electricity) | Owner's PC as the server + domain amortization. Vercel Hobby or Pages, Supabase Free, R2 Free, self-hosted AI, official APIs. |
+| First paying customers, cost-disciplined | **About $5–30/mo + payment fees** | Still the owner's PC; an optional VPS (~$8–30) is the main swing factor. Prefer Cloudflare Pages ($0) over Vercel Pro ($20). Stay on Supabase Free if it holds. |
+| Uncomfortable but still lean early scale | **About $50–120/mo + payment fees** | Supabase Pro ($25) and/or Vercel Pro ($20) and/or an optional VPS or GPU. Still avoid per-minute transcription APIs. |
 
 A single **Starter** subscriber at $49/mo should more than cover the disciplined launch stack after processor fees. That is intentional: infrastructure must not depend on a full Studio roster before it breaks even.
 
@@ -432,7 +436,7 @@ A single **Starter** subscriber at $49/mo should more than cover the disciplined
 
 - Storage: 300 × 20 MB × 14 ≈ 84 GB — **over** the 10 GB free tier. Either shorten retention (recommended) or budget ~$1.50/mo for the extra ~74 GB.
 - Whisper: 300 × 30 seconds ≈ 2.5 hours of audio/day, on CPU, $0 API.
-- Hosting: one 8 GB VPS (~$10–20) + Pages $0 + Supabase Free or Pro.
+- Hosting: owner's PC ($0 + electricity; optional 8 GB VPS ~$10–20) + Pages $0 + Supabase Free or Pro.
 - Revenue at even a small mix of $49–$99 easily dominates this, as long as you do not add a GPU farm or a paid STT vendor.
 
 If instead you transcribe **entire** 6-hour imports with a paid API, the same 60 Pro imports could be 360 hours of audio in a month — that is how costs explode. The architecture forbids that path.

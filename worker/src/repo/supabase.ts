@@ -22,7 +22,18 @@ export function createSupabaseAdmin(): SupabaseClient {
 }
 
 export class SupabaseClipRepository implements ClipperRepository {
-  constructor(private readonly client: SupabaseClient = createSupabaseAdmin()) {}
+  /**
+   * workspaceId tags every row so RLS shows it to that workspace's members
+   * (the service role bypasses RLS; rows without a workspace are invisible in the app).
+   */
+  constructor(
+    private readonly workspaceId: string | undefined = process.env.AUTO_WORKSPACE_ID || undefined,
+    private readonly client: SupabaseClient = createSupabaseAdmin(),
+  ) {}
+
+  private scoped(): { workspace_id: string } | Record<string, never> {
+    return this.workspaceId ? { workspace_id: this.workspaceId } : {};
+  }
 
   async upsertStream(stream: WatchedStream): Promise<void> {
     const { error } = await this.client.from("streams").upsert(
@@ -43,6 +54,7 @@ export class SupabaseClipRepository implements ClipperRepository {
 
   async saveMoment(moment: CandidateMoment): Promise<void> {
     const { error } = await this.client.from("moments").upsert({
+      ...this.scoped(),
       id: moment.id,
       channel_login: moment.channelLogin,
       channel_id: moment.channelId ?? null,
@@ -63,6 +75,7 @@ export class SupabaseClipRepository implements ClipperRepository {
 
   async saveClip(clip: ClipRecord): Promise<void> {
     const { error } = await this.client.from("clips").upsert({
+      ...this.scoped(),
       id: clip.id,
       moment_id: clip.momentId,
       channel_login: clip.channelLogin,
@@ -91,6 +104,7 @@ export class SupabaseClipRepository implements ClipperRepository {
     const { data, error } = await this.client
       .from("moments")
       .select("*")
+      .match(this.scoped())
       .order("peak_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
@@ -112,6 +126,7 @@ export class SupabaseClipRepository implements ClipperRepository {
     const { data, error } = await this.client
       .from("clips")
       .select("*")
+      .match(this.scoped())
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
@@ -144,7 +159,8 @@ export class SupabaseClipRepository implements ClipperRepository {
       .from("clips")
       .select("id", { count: "exact", head: true })
       .gte("created_at", isoTimestamp)
-      .in("status", ["ready", "rendering"]);
+      .in("status", ["ready", "rendering"])
+      .match(this.scoped());
     if (error) throw error;
     return count ?? 0;
   }
@@ -157,6 +173,7 @@ export class SupabaseClipRepository implements ClipperRepository {
         error_message: "Interrupted: the worker stopped while rendering.",
       })
       .eq("status", "rendering")
+      .match(this.scoped())
       .select("id");
     if (error) throw error;
     return data?.length ?? 0;

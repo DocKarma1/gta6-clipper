@@ -2,7 +2,13 @@ import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { findRepoRoot, getLogger, type CropRect, type SourceSize } from "@gta6-clipper/shared";
+import {
+  findRepoRoot,
+  getLogger,
+  venvOrPath,
+  type CropRect,
+  type SourceSize,
+} from "@gta6-clipper/shared";
 
 const execFileAsync = promisify(execFile);
 const log = getLogger("worker.facecam");
@@ -119,10 +125,7 @@ export function shouldUseFacecam(
 }
 
 export function defaultFacecamPython(): string {
-  const root = findRepoRoot();
-  const venv = path.join(root, ".venv", "bin", "python");
-  if (existsSync(venv)) return venv;
-  return "python3";
+  return venvOrPath(findRepoRoot(), "python", process.platform === "win32" ? "python" : "python3");
 }
 
 export function defaultFacecamScript(): string {

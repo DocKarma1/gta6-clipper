@@ -3,6 +3,7 @@ import { ConfigError } from "./errors";
 import { getPlan, isPlanId, type PlanId } from "./plans";
 import { loadRepoEnv } from "./config";
 import path from "node:path";
+import { venvOrPath } from "./venv";
 
 const emptyToUndefined = (value: unknown): unknown => {
   if (value === undefined || value === null) return undefined;
@@ -125,7 +126,7 @@ export function getAutoSettings(): AutoSettings {
   }
   const env = parsed.data;
   const dataDir = path.resolve(root, env.DATA_DIR ?? path.join(root, "data"));
-  const defaultStreamlink = path.join(root, ".venv", "bin", "streamlink");
+  const defaultStreamlink = venvOrPath(root, "streamlink");
   cached = {
     topK: env.AUTO_TOP_K,
     pollIntervalMs: Math.round(env.AUTO_POLL_MINUTES * 60_000),

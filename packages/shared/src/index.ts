@@ -101,3 +101,4 @@ export {
   type StreamPlatform,
   type WatchlistEntry,
 } from "./watchlist";
+export { venvExecutable, venvOrPath } from "./venv";
