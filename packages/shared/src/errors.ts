@@ -5,7 +5,9 @@ export type ErrorCode =
   | "TWITCH_API_ERROR"
   | "TWITCH_CATEGORY_NOT_FOUND"
   | "TWITCH_RESPONSE_INVALID"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "RENDER_INVALID"
+  | "RENDER_FAILED";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -67,6 +69,25 @@ export class TwitchApiError extends AppError {
   }
 }
 
+export class RenderError extends AppError {
+  constructor(
+    message: string,
+    options?: {
+      statusCode?: number;
+      retryable?: boolean;
+      code?: "RENDER_INVALID" | "RENDER_FAILED";
+      cause?: unknown;
+    },
+  ) {
+    super(options?.code ?? "RENDER_FAILED", message, {
+      statusCode: options?.statusCode ?? 500,
+      retryable: options?.retryable ?? false,
+      cause: options?.cause,
+    });
+    this.name = "RenderError";
+  }
+}
+
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
 }
@@ -90,6 +111,10 @@ export function toUserMessage(error: unknown): string {
         return "Twitch returned data in an unexpected format. Please try again shortly.";
       case "TWITCH_API_ERROR":
         return "Twitch could not be reached, or the request failed. Please try again shortly.";
+      case "RENDER_INVALID":
+        return "The clip could not be rendered because its layout or captions were invalid.";
+      case "RENDER_FAILED":
+        return "The clip render failed. Please try again.";
       default:
         return "Something went wrong while loading live streams. Please try again.";
     }
