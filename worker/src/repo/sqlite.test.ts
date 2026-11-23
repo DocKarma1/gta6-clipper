@@ -30,7 +30,7 @@ function clip(overrides: Partial<ClipRecord> = {}): ClipRecord {
     startedAt: "2026-11-23T15:34:23.100Z",
     durationSeconds: 15,
     hookTitle: "CHAT ANSWERED",
-    status: "rendered",
+    status: "ready",
     errorMessage: undefined,
     createdAt: "2026-11-23T15:35:00.000Z",
     ...overrides,
@@ -70,7 +70,7 @@ test("upgrades an old database and marks interrupted renders", async () => {
 
   const repo = new SqliteClipRepository(dir);
   await repo.saveClip(clip({ id: "a", status: "rendering" }));
-  await repo.saveClip(clip({ id: "b", status: "rendered", hypeScore: 60 }));
+  await repo.saveClip(clip({ id: "b", status: "ready", hypeScore: 60 }));
   assert.equal(await repo.markInterruptedClips(), 1);
   const rows = await repo.listRecentClips(5);
   const a = rows.find((row) => row.id === "a");

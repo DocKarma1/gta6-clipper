@@ -2,6 +2,10 @@ import { readLocalClips, toPublicClip } from "../../server/clips";
 
 export const dynamic = "force-dynamic";
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("sv-SE", { hour12: false });
+}
+
 export default function QueuePage() {
   const clips = readLocalClips(40).map(toPublicClip);
   const ready = clips.filter((clip) => clip.status === "ready").length;
@@ -50,6 +54,39 @@ export default function QueuePage() {
                 <p className="muted">
                   {Math.round(clip.durationSeconds)}s · {new Date(clip.createdAt).toLocaleString()}
                 </p>
+                <dl className="queue-highlight">
+                  <div>
+                    <dt>Type</dt>
+                    <dd>
+                      {clip.clipType === "question_reply" ? "Question → chat answer" : "Chat spike"}
+                    </dd>
+                  </div>
+                  {clip.hypeScore !== undefined ? (
+                    <div>
+                      <dt>Score</dt>
+                      <dd>{clip.hypeScore}/100</dd>
+                    </div>
+                  ) : null}
+                  {clip.peakAt ? (
+                    <div>
+                      <dt>Peak</dt>
+                      <dd>
+                        {formatTime(clip.peakAt)}
+                        {clip.peakOffsetSeconds !== undefined
+                          ? ` (${clip.peakOffsetSeconds.toFixed(1)}s in)`
+                          : ""}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {clip.highlightStartAt && clip.highlightEndAt ? (
+                    <div>
+                      <dt>Window</dt>
+                      <dd>
+                        {formatTime(clip.highlightStartAt)}–{formatTime(clip.highlightEndAt)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
                 {clip.errorMessage ? <p className="auth-error">{clip.errorMessage}</p> : null}
                 {clip.hasVideo ? (
                   <a className="btn" href={`/api/clips/${clip.id}/file?kind=video`}>

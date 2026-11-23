@@ -1,13 +1,14 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { getAutoSettings, type ClipRecord } from "@gta6-clipper/shared";
-
-const SAMPLE_ROOT = "/workspace/gta6-clipper-samples";
+import { getAutoSettings, type ClipRecord, type MomentKind } from "@gta6-clipper/shared";
 
 export function clipStorageRoots(): string[] {
   const settings = getAutoSettings();
-  return [path.resolve(settings.dataDir), path.resolve(SAMPLE_ROOT)];
+  const roots = [path.resolve(settings.dataDir)];
+  // Optional extra folder with sample renders (AUTO_SAMPLE_DIR), served read-only.
+  if (process.env.AUTO_SAMPLE_DIR) roots.push(path.resolve(process.env.AUTO_SAMPLE_DIR));
+  return roots;
 }
 
 export function isAllowedClipPath(filePath: string): boolean {
@@ -32,6 +33,15 @@ function mapClip(row: Record<string, unknown>): ClipRecord {
     status: row.status as ClipRecord["status"],
     errorMessage: row.error_message ? String(row.error_message) : undefined,
     createdAt: String(row.created_at),
+    ...(row.clip_type ? { clipType: row.clip_type as MomentKind } : {}),
+    ...(row.event_at ? { eventAt: String(row.event_at) } : {}),
+    ...(row.peak_at ? { peakAt: String(row.peak_at) } : {}),
+    ...(row.highlight_start_at ? { highlightStartAt: String(row.highlight_start_at) } : {}),
+    ...(row.highlight_end_at ? { highlightEndAt: String(row.highlight_end_at) } : {}),
+    ...(row.peak_offset_seconds != null
+      ? { peakOffsetSeconds: Number(row.peak_offset_seconds) }
+      : {}),
+    ...(row.hype_score != null ? { hypeScore: Number(row.hype_score) } : {}),
   };
 }
 
@@ -64,6 +74,12 @@ export type PublicClip = {
   createdAt: string;
   hasVideo: boolean;
   hasPoster: boolean;
+  clipType: MomentKind;
+  hypeScore?: number;
+  peakAt?: string;
+  peakOffsetSeconds?: number;
+  highlightStartAt?: string;
+  highlightEndAt?: string;
 };
 
 export function toPublicClip(clip: ClipRecord): PublicClip {
@@ -76,6 +92,12 @@ export function toPublicClip(clip: ClipRecord): PublicClip {
     ...(clip.errorMessage ? { errorMessage: clip.errorMessage } : {}),
     durationSeconds: clip.durationSeconds,
     createdAt: clip.createdAt,
+    clipType: clip.clipType ?? "chat_spike",
+    ...(clip.hypeScore !== undefined ? { hypeScore: clip.hypeScore } : {}),
+    ...(clip.peakAt ? { peakAt: clip.peakAt } : {}),
+    ...(clip.peakOffsetSeconds !== undefined ? { peakOffsetSeconds: clip.peakOffsetSeconds } : {}),
+    ...(clip.highlightStartAt ? { highlightStartAt: clip.highlightStartAt } : {}),
+    ...(clip.highlightEndAt ? { highlightEndAt: clip.highlightEndAt } : {}),
     hasVideo: Boolean(
       clip.outputPath && existsSync(clip.outputPath) && isAllowedClipPath(clip.outputPath),
     ),

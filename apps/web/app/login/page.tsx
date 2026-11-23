@@ -1,20 +1,22 @@
 import Link from "next/link";
 import { SignInForm } from "../../components/sign-in-form";
 import { isSupabaseAuthConfigured } from "../../lib/auth-mode";
+import { safeNextPath } from "../../lib/safe-next";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
   const params = await searchParams;
-  const nextPath = params.next && params.next.startsWith("/") ? params.next : "/dashboard";
+  const nextPath = safeNextPath(params.next);
   const configured = isSupabaseAuthConfigured();
 
   return (
     <section className="hero">
       <p className="badge">{configured ? "Supabase Auth" : "Local development mode"}</p>
       <h1>Sign in</h1>
+      {params.error ? <p className="auth-error">{params.error.slice(0, 200)}</p> : null}
       {configured ? (
         <>
           <p className="lead">
