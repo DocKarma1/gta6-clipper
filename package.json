@@ -5,14 +5,27 @@
   "description": "Original starter for a GTA 6 live-clipping desk: Next.js app plus a worker for ffmpeg and self-hosted Whisper.",
   "workspaces": [
     "apps/web",
-    "worker"
+    "worker",
+    "packages/*"
   ],
   "scripts": {
     "dev": "npm run dev --workspace=web",
     "dev:web": "npm run dev --workspace=web",
     "dev:worker": "npm run dev --workspace=worker",
-    "build": "npm run build --workspace=web && npm run build --workspace=worker",
-    "lint": "npm run lint --workspace=web"
+    "build": "npm run build --workspace=web",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.16.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0"
   },
   "engines": {
     "node": ">=20"

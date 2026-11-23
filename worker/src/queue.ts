@@ -1,20 +1,20 @@
-import { Queue, type ConnectionOptions } from "bullmq";
-import { config } from "./config.js";
+import { type ConnectionOptions, Queue } from "bullmq";
+import { getWorkerConfig } from "./config";
 
 export const QUEUE_NAMES = {
   detect: "detect-spikes",
   clip: "render-clip",
   caption: "caption-clip",
   titles: "write-titles",
-  publish: "publish-clip"
+  publish: "publish-clip",
 } as const;
 
 export function redisConnection(): ConnectionOptions {
-  const url = new URL(config.redisUrl);
+  const url = new URL(getWorkerConfig().redisUrl);
   return {
     host: url.hostname,
     port: Number(url.port || 6379),
-    password: url.password || undefined
+    ...(url.password ? { password: url.password } : {}),
   };
 }
 

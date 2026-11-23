@@ -6,14 +6,14 @@ export default function PricingPage() {
       <section className="hero">
         <h1>Pricing</h1>
         <p>
-          Three plans. Every plan includes Live Radar, 1080p downloads, and no watermark.
-          Auto-post to all four platforms is Studio only.
+          Three plans. Every plan includes Live Radar, 1080p downloads, and no watermark. Auto-post
+          to all four platforms is Studio only.
         </p>
       </section>
       <p className="notice">
-        Do not enable checkout on Vercel Hobby. Hobby is limited to personal or
-        non-commercial use (Vercel Terms of Service, Section 4). Move to Cloudflare Pages
-        or Vercel Pro before charging customers. Payment processor fees are per transaction.
+        Do not enable checkout on Vercel Hobby. Hobby is limited to personal or non-commercial use
+        (Vercel Terms of Service, Section 4). Move to Cloudflare Pages or Vercel Pro before charging
+        customers. Payment processor fees are per transaction.
       </p>
       <section className="grid">
         {PLANS.map((plan) => (
@@ -39,7 +39,9 @@ export default function PricingPage() {
                 Auto-post to TikTok, Shorts, Reels, Facebook:{" "}
                 {plan.autoPost ? `yes, ${plan.accountsPerPlatform} accounts each` : "no"}
               </li>
-              <li>{plan.seats} team seat{plan.seats > 1 ? "s" : ""}</li>
+              <li>
+                {plan.seats} team seat{plan.seats > 1 ? "s" : ""}
+              </li>
             </ul>
           </article>
         ))}

@@ -36,7 +36,7 @@ export const PLANS: Plan[] = [
     accountsPerPlatform: 0,
     scheduling: false,
     seats: 1,
-    summary: "Two live streams, downloadable 1080p Shorts, and the live directory."
+    summary: "Two live streams, downloadable 1080p Shorts, and the live directory.",
   },
   {
     id: "pro",
@@ -54,7 +54,7 @@ export const PLANS: Plan[] = [
     accountsPerPlatform: 0,
     scheduling: false,
     seats: 1,
-    summary: "More concurrency, every caption style, and AI titles plus hashtags."
+    summary: "More concurrency, every caption style, and AI titles plus hashtags.",
   },
   {
     id: "studio",
@@ -72,6 +72,6 @@ export const PLANS: Plan[] = [
     accountsPerPlatform: 3,
     scheduling: true,
     seats: 3,
-    summary: "Ten streams, scheduled auto-post to all four platforms, and team seats."
-  }
+    summary: "Ten streams, scheduled auto-post to all four platforms, and team seats.",
+  },
 ];

@@ -3,9 +3,9 @@ export default function ImportPage() {
     <section className="hero">
       <h1>YouTube import</h1>
       <p className="lead">
-        Paste a long-form video you are allowed to use (up to 6 hours on Studio). The worker
-        will look for peak moments and return Shorts through the same Clip Queue. This form
-        is a placeholder — ingest is not enabled yet.
+        Paste a long-form video you are allowed to use (up to 6 hours on Studio). The worker will
+        look for peak moments and return Shorts through the same Clip Queue. This form is a
+        placeholder — ingest is not enabled yet.
       </p>
       <form action="#" method="post">
         <label>

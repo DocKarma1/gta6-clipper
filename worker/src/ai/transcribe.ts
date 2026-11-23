@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { config } from "../config.js";
+import { getWorkerConfig } from "../config";
 
 export type Word = { start: number; end: number; text: string };
 
@@ -15,6 +15,7 @@ export type Transcript = {
  * faster-whisper helper. No paid caption API in the default path.
  */
 export function transcribeClip(audioPath: string): Promise<Transcript> {
+  const config = getWorkerConfig();
   const here = path.dirname(fileURLToPath(import.meta.url));
   const script = path.resolve(here, "../../scripts/transcribe.py");
 
@@ -25,7 +26,7 @@ export function transcribeClip(audioPath: string): Promise<Transcript> {
       "--model",
       config.whisperModel,
       "--device",
-      config.whisperDevice
+      config.whisperDevice,
     ]);
 
     let stdout = "";

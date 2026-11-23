@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "GTA 6 Clipper",
   description:
-    "Watch live GTA 6 Twitch chats, cut spike moments to 9:16, and export 1080p Shorts. Original starter project."
+    "Watch live GTA 6 Twitch chats, cut spike moments to 9:16, and export 1080p Shorts. Original starter project.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -26,8 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
         <main>{children}</main>
         <footer>
-          Independent project — not affiliated with Rockstar Games or Take-Two Interactive.
-          Only clip streams you have permission to use.{" "}
+          Independent project — not affiliated with Rockstar Games or Take-Two Interactive. Only
+          clip streams you have permission to use.{" "}
           <a href="https://github.com/DocKarma1/gta6-clipper/blob/main/docs/PROJECT_PLAN.md">
             Project plan
           </a>

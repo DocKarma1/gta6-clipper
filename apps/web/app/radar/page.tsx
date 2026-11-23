@@ -1,32 +1,30 @@
-export default function RadarPage() {
+import { RadarList } from "../../components/radar-list";
+import { loadRadarData } from "../../server/streams";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export default async function RadarPage() {
+  const data = await loadRadarData();
+
   return (
     <>
       <section className="hero">
-        <h1>Live Radar</h1>
+        <p className="badge">Live Radar</p>
+        <h1>GTA 6 on Twitch, right now</h1>
         <p>
-          This page will list every live GTA 6 stream on Twitch, ranked by viewers and chat
-          hype. The Helix directory is not connected in this scaffold.
+          Live streams in the Grand Theft Auto VI category, ranked by viewer count. Chat-hype
+          scoring arrives in a later phase.
         </p>
       </section>
-      <p className="notice">
-        Attaching a clipper to someone else&apos;s stream will require a stored permission
-        confirmation. Official Twitch APIs only — no unofficial access.
-      </p>
-      <table className="placeholder-table">
-        <thead>
-          <tr>
-            <th>Streamer</th>
-            <th>Viewers</th>
-            <th>Hype</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td colSpan={4}>No live directory yet. Wire Twitch Helix in Phase 1.</td>
-          </tr>
-        </tbody>
-      </table>
+      {data.ok ? (
+        <RadarList result={data.result} />
+      ) : (
+        <div className="empty-state error-state">
+          <h2>Could not load live streams</h2>
+          <p className="muted">{data.message}</p>
+        </div>
+      )}
     </>
   );
 }

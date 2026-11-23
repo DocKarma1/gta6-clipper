@@ -1,4 +1,4 @@
-import type { ChatEvent } from "../twitch/chat.js";
+import type { ChatEvent } from "../twitch/chat";
 
 export type SpikeCandidate = {
   streamId: string;

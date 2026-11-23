@@ -6,6 +6,10 @@ This is an original starter for a clipping desk: a Next.js web app plus a separa
 
 **Do not clone, copy, or redeploy another vendor's source, branding, or assets into this repo.**
 
+## Architecture
+
+The monorepo splits **app UI**, **server/API services**, **shared config/types**, and a **worker** process. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the folder layout and how later phases plug in.
+
 ## Read the plan first
 
 The full project plan (architecture, stack, phases, API sequencing, risks, and costs) is here:
@@ -22,17 +26,17 @@ The full project plan (architecture, stack, phases, API sequencing, risks, and c
 
 ### Build phases (solo full-time developer, rough estimates)
 
-| Phase | Focus | Estimate |
-|---|---|---|
-| 0. Foundation | App, auth, schema, pricing pages | 2 weeks |
-| 1. Live Radar | Twitch Helix directory | 2 weeks |
-| 2. Chat spikes | IRC / EventSub + hype score | 2–3 weeks |
-| 3. Clipping pipeline | VPS, ffmpeg, 1080p, Clip Queue | 3–4 weeks |
-| 4. Captions and titles | faster-whisper + local/free LLM | 2–3 weeks |
-| 5. Action crop + 10 streams | Motion-following 9:16, concurrency | 2–3 weeks |
-| 6. YouTube import | VODs up to 6 hours | 1–2 weeks |
-| 7. Auto-post | YouTube, then Meta, then TikTok | 3–5 weeks engineering + review waits |
-| 8. Billing and launch | Stripe, seats, leave Hobby before charging | 2–3 weeks |
+| Phase                       | Focus                                      | Estimate                             |
+| --------------------------- | ------------------------------------------ | ------------------------------------ |
+| 0. Foundation               | App, auth, schema, pricing pages           | 2 weeks                              |
+| 1. Live Radar               | Twitch Helix directory                     | 2 weeks                              |
+| 2. Chat spikes              | IRC / EventSub + hype score                | 2–3 weeks                            |
+| 3. Clipping pipeline        | VPS, ffmpeg, 1080p, Clip Queue             | 3–4 weeks                            |
+| 4. Captions and titles      | faster-whisper + local/free LLM            | 2–3 weeks                            |
+| 5. Action crop + 10 streams | Motion-following 9:16, concurrency         | 2–3 weeks                            |
+| 6. YouTube import           | VODs up to 6 hours                         | 1–2 weeks                            |
+| 7. Auto-post                | YouTube, then Meta, then TikTok            | 3–5 weeks engineering + review waits |
+| 8. Billing and launch       | Stripe, seats, leave Hobby before charging | 2–3 weeks                            |
 
 Total: about **19–27 weeks**, plus API review calendar time. A demo with downloadable captioned Shorts is realistic after phases 0–4 (~10–14 weeks).
 
