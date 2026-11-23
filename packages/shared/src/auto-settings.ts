@@ -49,7 +49,6 @@ const autoSchema = z.object({
   DATA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   STREAMLINK_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   AUTO_PLAN: z.preprocess(emptyToUndefined, z.enum(["starter", "pro", "studio"]).optional()),
-  AUTO_WORKSPACE_ID: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 
 export type AutoSettings = {
@@ -70,8 +69,6 @@ export type AutoSettings = {
   dataDir: string;
   streamlinkPath: string;
   planId: PlanId;
-  /** Supabase workspace whose receipts and settings the worker follows (needs the service role key). */
-  workspaceId: string | undefined;
 };
 
 function formatIssues(error: z.ZodError): string {
@@ -109,7 +106,6 @@ export function getAutoSettings(): AutoSettings {
     dataDir,
     streamlinkPath: env.STREAMLINK_PATH ?? defaultStreamlink,
     planId: env.AUTO_PLAN && isPlanId(env.AUTO_PLAN) ? env.AUTO_PLAN : "starter",
-    workspaceId: env.AUTO_WORKSPACE_ID,
   };
   cached.topK = Math.min(cached.topK, getPlan(cached.planId).streamsAtOnce);
   return cached;
