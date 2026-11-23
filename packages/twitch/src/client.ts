@@ -14,13 +14,15 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 const log = getLogger("twitch.helix");
 
-export type HelixQuery = Record<string, string | number | undefined>;
+export type HelixQuery = Record<string, string | number | readonly string[] | undefined>;
 
 function buildUrl(path: string, query?: HelixQuery): string {
   const url = new URL(path.startsWith("http") ? path : `${HELIX_BASE}${path}`);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined && value !== "") {
+      if (Array.isArray(value)) {
+        for (const item of value) if (item) url.searchParams.append(key, item);
+      } else if (value !== undefined && value !== "") {
         url.searchParams.set(key, String(value));
       }
     }

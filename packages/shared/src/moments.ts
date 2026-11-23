@@ -17,6 +17,10 @@ export type CandidateMoment = {
   messageRate: number;
   baselineRate: number;
   zScore: number;
+  /** Chat-time onset of the burst (first second clearly above baseline). */
+  burstStartAt?: string;
+  /** Chat-time moment the burst settled back down. */
+  burstEndAt?: string;
 };
 
 export type ClipRecord = {
@@ -33,6 +37,15 @@ export type ClipRecord = {
   status: "rendering" | "ready" | "failed";
   errorMessage: string | undefined;
   createdAt: string;
+  /** Estimated on-screen time of the event (chat onset minus chat delay). */
+  eventAt?: string;
+  /** Chat peak mapped to video time. */
+  peakAt?: string;
+  highlightStartAt?: string;
+  highlightEndAt?: string;
+  /** Seconds from the start of the MP4 to the peak (thumbnail frame). */
+  peakOffsetSeconds?: number;
+  hypeScore?: number;
 };
 
 export type WatchedStream = {

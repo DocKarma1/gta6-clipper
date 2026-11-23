@@ -9,7 +9,11 @@ export {
 } from "./games";
 export {
   clearStreamListCache,
+  getAutoCandidates,
   getLiveGta6Streams,
+  getLiveStreamsByLogins,
+  GTA_V_GAME_NAME,
+  type AutoCandidateResult,
   listStreamsByGameId,
   thumbnailUrl,
   toLiveStream,

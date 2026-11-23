@@ -92,3 +92,66 @@ export async function getLiveGta6Streams(options?: {
 export function clearStreamListCache(): void {
   listCache = undefined;
 }
+
+export const GTA_V_GAME_NAME = "Grand Theft Auto V";
+let gtaVGameId: string | undefined;
+
+async function resolveGtaVGameId(): Promise<string | undefined> {
+  if (gtaVGameId) return gtaVGameId;
+  const payload = (await helixGet("/games", { name: GTA_V_GAME_NAME })) as {
+    data?: Array<{ id: string; name: string }>;
+  };
+  gtaVGameId = payload.data?.find((game) => game.name === GTA_V_GAME_NAME)?.id;
+  return gtaVGameId;
+}
+
+/** Live streams for up to 100 logins in one request (any category). */
+export async function getLiveStreamsByLogins(logins: readonly string[]): Promise<LiveStream[]> {
+  const unique = [...new Set(logins.map((login) => login.toLowerCase()))].slice(0, 100);
+  if (unique.length === 0) return [];
+  const payload = await helixGet("/streams", { user_login: unique, first: 100 });
+  const parsed = parseHelix(helixStreamsResponseSchema, payload, "streams");
+  return parsed.data.map(toLiveStream);
+}
+
+export type AutoCandidateResult = {
+  /** All GTA VI streams (the directory). */
+  directory: LiveStream[];
+  /** Watchlisted streamers currently live in an allowed GTA category. */
+  watchlistLive: LiveStream[];
+};
+
+/**
+ * Candidates for auto-selection: the GTA VI directory plus watchlisted
+ * streamers live in GTA VI (or GTA V when includeGtaV is set).
+ */
+export async function getAutoCandidates(options: {
+  watchlistLogins: readonly string[];
+  includeGtaV: boolean;
+}): Promise<AutoCandidateResult> {
+  const radar = await getLiveGta6Streams({ skipCache: true });
+  const allowedGames = new Set([radar.game.id]);
+  if (options.includeGtaV) {
+    const id = await resolveGtaVGameId().catch(() => undefined);
+    if (id) allowedGames.add(id);
+  }
+  let watchlistLive: LiveStream[] = [];
+  if (options.watchlistLogins.length > 0) {
+    try {
+      const payload = await helixGet("/streams", {
+        user_login: [...new Set(options.watchlistLogins)].slice(0, 100),
+        first: 100,
+      });
+      const parsed = parseHelix(helixStreamsResponseSchema, payload, "streams");
+      watchlistLive = parsed.data
+        .filter((stream) => allowedGames.has(stream.game_id))
+        .map(toLiveStream);
+    } catch (error) {
+      log.warn(
+        { err: error instanceof Error ? error.message : "unknown" },
+        "Could not check watchlisted streamers; using the directory only",
+      );
+    }
+  }
+  return { directory: radar.streams, watchlistLive };
+}

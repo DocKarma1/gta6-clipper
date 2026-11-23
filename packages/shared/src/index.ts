@@ -60,6 +60,7 @@ export {
 } from "./video";
 
 export {
+  effectiveStreamCap,
   getAutoSettings,
   resetAutoSettingsCache,
   normalizeLogin,
@@ -91,3 +92,9 @@ export {
 } from "./plan-gates";
 
 export type { Database, Json } from "./database.types";
+export {
+  DEFAULT_WATCHLIST,
+  watchlistPriorityByLogin,
+  type StreamPlatform,
+  type WatchlistEntry,
+} from "./watchlist";

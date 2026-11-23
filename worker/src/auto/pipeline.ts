@@ -6,6 +6,9 @@ import {
   assertCaptionStyle,
   assertClipsThisMonth,
   capConcurrentStreams,
+  DEFAULT_WATCHLIST,
+  effectiveStreamCap,
+  watchlistPriorityByLogin,
   getLogger,
   normalizeLogin,
   PlanLimitError,
@@ -19,7 +22,7 @@ import {
   type TimedWord,
   type VerticalLayout,
 } from "@gta6-clipper/shared";
-import { getLiveGta6Streams } from "@gta6-clipper/twitch";
+import { getAutoCandidates } from "@gta6-clipper/twitch";
 import { TwitchAnonymousIrc } from "../chat/irc";
 import { ChannelSpikeDetector } from "../detect/spikes";
 import { renderVerticalShort } from "../export/render";
@@ -101,10 +104,20 @@ export class AutoPipeline {
 
   private async refreshSelection(): Promise<void> {
     try {
-      const live = await getLiveGta6Streams({ skipCache: true });
+      const settings = this.options.settings;
+      const priorities = settings.useWatchlist
+        ? watchlistPriorityByLogin(DEFAULT_WATCHLIST)
+        : new Map<string, number>();
+      const candidates = await getAutoCandidates({
+        watchlistLogins: [...priorities.keys()],
+        includeGtaV: settings.includeGtaV,
+      });
       const next = capConcurrentStreams(
-        this.options.settings.planId,
-        selectStreams(live.streams, this.options.settings),
+        settings.planId,
+        selectStreams(
+          { directory: candidates.directory, watchlistLive: candidates.watchlistLive, priorities },
+          { ...settings, topK: effectiveStreamCap(settings) },
+        ),
       );
       this.selected = next;
       const logins = next.map((stream) => normalizeLogin(stream.streamerLogin));
@@ -141,7 +154,13 @@ export class AutoPipeline {
           this.detectors.delete(login);
         }
       }
-      log.info({ count: logins.length, channels: logins }, "Updated watched channels");
+      log.info(
+        {
+          count: logins.length,
+          channels: next.map((stream) => `${stream.streamerLogin}(${stream.reason})`),
+        },
+        "Updated watched channels",
+      );
     } catch (error) {
       log.warn(
         { err: error instanceof Error ? error.message : "unknown" },
