@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -59,7 +60,9 @@ def main() -> int:
         json.dump({"text": "", "words": []}, sys.stdout)
         return 2
 
-    wav_path = Path(tempfile.mkstemp(suffix=".wav")[1])
+    fd, tmp_name = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)  # Windows: an open handle blocks ffmpeg writes and unlink()
+    wav_path = Path(tmp_name)
     try:
         error = extract_wav(Path(args.audio_path), wav_path)
         if error:

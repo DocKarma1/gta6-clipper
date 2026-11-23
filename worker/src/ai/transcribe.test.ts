@@ -4,6 +4,6 @@ import { transcribeScriptPath } from "./transcribe";
 
 describe("transcribeClip", () => {
   it("points at the worker faster-whisper helper", () => {
-    assert.match(transcribeScriptPath(), /worker\/scripts\/transcribe\.py$/);
+    assert.match(transcribeScriptPath(), /worker[\\/]scripts[\\/]transcribe\.py$/);
   });
 });
