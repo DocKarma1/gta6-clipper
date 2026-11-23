@@ -27,9 +27,13 @@ worker/.data/
 *.wav
 *.srt
 *.ass
-models/
+# Local model caches at the repo root (Whisper, GGUF, etc.)
+/models/
 *.bin
 *.gguf
+# Keep the vendored YuNet face model in worker/models.
+!worker/models/
+!worker/models/**
 
 # logs and OS
 npm-debug.log*

@@ -22,6 +22,7 @@ import { TwitchAnonymousIrc } from "../chat/irc";
 import { ChannelSpikeDetector } from "../detect/spikes";
 import { renderVerticalShort } from "../export/render";
 import { StreamCapture } from "../media/capture";
+import { FacecamDetector, shouldUseFacecam } from "../detect/facecam";
 import type { ClipperRepository } from "../repo/interface";
 import { selectStreams } from "./select";
 
@@ -31,6 +32,7 @@ export type PipelineOptions = {
   settings: AutoSettings;
   repository: ClipperRepository;
   facecamByChannel?: Record<string, CropRect>;
+  facecamDetector?: FacecamDetector;
   sampleOutputDir?: string;
 };
 
@@ -38,6 +40,7 @@ export class AutoPipeline {
   private readonly irc: TwitchAnonymousIrc;
   private readonly captures = new Map<string, StreamCapture>();
   private readonly detectors = new Map<string, ChannelSpikeDetector>();
+  private readonly facecam: FacecamDetector;
   private selected: LiveStream[] = [];
   private pruneTimer: NodeJS.Timeout | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
@@ -46,6 +49,11 @@ export class AutoPipeline {
   readonly clips: ClipRecord[] = [];
 
   constructor(private readonly options: PipelineOptions) {
+    this.facecam =
+      options.facecamDetector ??
+      new FacecamDetector({
+        cachePath: path.join(options.settings.dataDir, "facecam-cache.json"),
+      });
     this.irc = new TwitchAnonymousIrc({
       onChat: (event) => {
         const moment = this.detectors.get(event.channelLogin)?.ingest(event);
@@ -166,7 +174,7 @@ export class AutoPipeline {
     const outputPath = `${base}.mp4`;
     const posterPath = `${base}.png`;
     const hookTitle = hookTitleFrom(moment);
-    const layout = this.layoutFor(moment.channelLogin, hookTitle);
+    let layout = this.layoutFor(moment.channelLogin, hookTitle);
     const record: ClipRecord = {
       id: randomUUID(),
       momentId: moment.id,
@@ -201,6 +209,41 @@ export class AutoPipeline {
       throw error;
     }
     const extracted = await capture.extractWindow(startMs, endMs, sourcePath);
+    if (extracted) {
+      const detectFrame = `${base}-facecam.png`;
+      try {
+        await extractPng(sourcePath, detectFrame, Math.min(4, durationSeconds / 3));
+        const detected = await this.facecam.detectForChannel(moment.channelLogin, detectFrame);
+        if (
+          shouldUseFacecam(detected) &&
+          !this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]
+        ) {
+          layout = { layout: "stacked-split", facecam: detected.rect };
+          record.layout = layout.layout;
+          log.info(
+            {
+              channel: moment.channelLogin,
+              confidence: detected.confidence,
+              method: detected.method,
+              rect: detected.rect,
+            },
+            "Using stacked-split after facecam detection",
+          );
+        } else if (!this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]) {
+          layout = { layout: "blurred-background", hookTitle };
+          record.layout = layout.layout;
+        }
+      } catch (error) {
+        log.warn(
+          { err: error instanceof Error ? error.message : "unknown", channel: moment.channelLogin },
+          "Facecam detection skipped; using the blurred-background layout",
+        );
+        if (!this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]) {
+          layout = { layout: "blurred-background", hookTitle };
+          record.layout = layout.layout;
+        }
+      }
+    }
     if (!extracted) {
       record.status = "failed";
       record.errorMessage = "No buffered video covered this moment.";

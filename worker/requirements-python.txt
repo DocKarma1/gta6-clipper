@@ -1,0 +1,4 @@
+# Install into the project .venv:  python3 -m venv .venv && .venv/bin/pip install -r worker/requirements-python.txt
+streamlink==8.6.3
+opencv-python-headless>=4.10
+numpy
