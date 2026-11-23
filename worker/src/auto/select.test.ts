@@ -91,12 +91,17 @@ describe("stream cap and watchlist", () => {
 
   it("ships verified watchlist entries including the requested streamers", () => {
     const priorities = watchlistPriorityByLogin(DEFAULT_WATCHLIST);
-    for (const login of ["ishowspeed", "fanum", "neon", "kaicenat"]) {
-      assert.ok(priorities.has(login), login);
-    }
-    assert.ok(DEFAULT_WATCHLIST.length >= 10 && DEFAULT_WATCHLIST.length <= 15);
+    assert.equal(priorities.get("ishowspeed"), 1);
+    assert.equal(priorities.get("kaicenat"), 2);
+    assert.equal(priorities.get("ohnepixel"), 3);
+    assert.equal(priorities.get("fanum"), 18);
+    assert.equal(priorities.has("neon"), false, "twitch.tv/neon is unrelated");
+    assert.equal(priorities.has("n3on"), false, "N3on is Kick-only and unsupported");
+    const n3on = DEFAULT_WATCHLIST.find((entry) => entry.login === "n3on");
+    assert.equal(n3on?.platform, "kick");
+    assert.equal(n3on?.captureSupported, false);
     assert.ok(DEFAULT_WATCHLIST.every((entry) => /^[a-z0-9_]{1,25}$/.test(entry.login)));
-    const offTwitch = DEFAULT_WATCHLIST.filter((entry) => entry.platform !== "twitch");
-    assert.ok(offTwitch.every((entry) => !entry.captureSupported));
+    const priorityValues = DEFAULT_WATCHLIST.map((entry) => entry.priority);
+    assert.equal(new Set(priorityValues).size, priorityValues.length);
   });
 });
