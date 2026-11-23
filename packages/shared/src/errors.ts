@@ -7,7 +7,8 @@ export type ErrorCode =
   | "TWITCH_RESPONSE_INVALID"
   | "INTERNAL_ERROR"
   | "RENDER_INVALID"
-  | "RENDER_FAILED";
+  | "RENDER_FAILED"
+  | "PLAN_LIMIT";
 
 export class AppError extends Error {
   readonly code: ErrorCode;
@@ -115,9 +116,23 @@ export function toUserMessage(error: unknown): string {
         return "The clip could not be rendered because its layout or captions were invalid.";
       case "RENDER_FAILED":
         return "The clip render failed. Please try again.";
+      case "PLAN_LIMIT":
+        return error.message;
       default:
         return "Something went wrong while loading live streams. Please try again.";
     }
   }
   return "Something went wrong while loading live streams. Please try again.";
+}
+
+export class PlanLimitError extends AppError {
+  readonly planId: string;
+  readonly limit: string;
+
+  constructor(message: string, options: { planId: string; limit: string }) {
+    super("PLAN_LIMIT", message, { statusCode: 402, retryable: false });
+    this.name = "PlanLimitError";
+    this.planId = options.planId;
+    this.limit = options.limit;
+  }
 }

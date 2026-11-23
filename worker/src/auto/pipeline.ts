@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import {
+  assertCaptionStyle,
+  assertClipsThisMonth,
+  capConcurrentStreams,
   getLogger,
   normalizeLogin,
+  PlanLimitError,
+  startOfUtcMonth,
   type AutoSettings,
+  type CaptionStyleId,
   type CandidateMoment,
   type ClipRecord,
   type CropRect,
@@ -85,7 +91,10 @@ export class AutoPipeline {
   private async refreshSelection(): Promise<void> {
     try {
       const live = await getLiveGta6Streams({ skipCache: true });
-      const next = selectStreams(live.streams, this.options.settings);
+      const next = capConcurrentStreams(
+        this.options.settings.planId,
+        selectStreams(live.streams, this.options.settings),
+      );
       this.selected = next;
       const logins = next.map((stream) => normalizeLogin(stream.streamerLogin));
       this.irc.sync(logins);
@@ -158,7 +167,6 @@ export class AutoPipeline {
     const posterPath = `${base}.png`;
     const hookTitle = hookTitleFrom(moment);
     const layout = this.layoutFor(moment.channelLogin, hookTitle);
-    const extracted = await capture.extractWindow(startMs, endMs, sourcePath);
     const record: ClipRecord = {
       id: randomUUID(),
       momentId: moment.id,
@@ -174,6 +182,25 @@ export class AutoPipeline {
       errorMessage: undefined,
       createdAt: new Date().toISOString(),
     };
+    try {
+      const used = await this.options.repository.countClipsSince(startOfUtcMonth().toISOString());
+      assertClipsThisMonth(settings.planId, used);
+      assertCaptionStyle(settings.planId, "default" satisfies CaptionStyleId);
+    } catch (error) {
+      if (error instanceof PlanLimitError) {
+        record.status = "failed";
+        record.errorMessage = error.message;
+        this.clips.push(record);
+        await this.options.repository.saveClip(record);
+        log.warn(
+          { channel: moment.channelLogin, limit: error.limit },
+          "Skipped a clip because of a plan limit",
+        );
+        return;
+      }
+      throw error;
+    }
+    const extracted = await capture.extractWindow(startMs, endMs, sourcePath);
     if (!extracted) {
       record.status = "failed";
       record.errorMessage = "No buffered video covered this moment.";

@@ -6,5 +6,6 @@ export interface ClipperRepository {
   saveClip(clip: ClipRecord): Promise<void>;
   listRecentMoments(limit: number): Promise<CandidateMoment[]>;
   listRecentClips(limit: number): Promise<ClipRecord[]>;
+  countClipsSince(isoTimestamp: string): Promise<number>;
   close?: () => void;
 }

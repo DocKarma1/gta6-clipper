@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ConfigError } from "./errors";
+import { getPlan, isPlanId, type PlanId } from "./plans";
 import { loadRepoEnv } from "./config";
 import path from "node:path";
 
@@ -47,6 +48,7 @@ const autoSchema = z.object({
   AUTO_RUN_SECONDS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   DATA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   STREAMLINK_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  AUTO_PLAN: z.preprocess(emptyToUndefined, z.enum(["starter", "pro", "studio"]).optional()),
 });
 
 export type AutoSettings = {
@@ -66,6 +68,7 @@ export type AutoSettings = {
   runSeconds: number | undefined;
   dataDir: string;
   streamlinkPath: string;
+  planId: PlanId;
 };
 
 function formatIssues(error: z.ZodError): string {
@@ -102,7 +105,9 @@ export function getAutoSettings(): AutoSettings {
     runSeconds: env.AUTO_RUN_SECONDS,
     dataDir,
     streamlinkPath: env.STREAMLINK_PATH ?? defaultStreamlink,
+    planId: env.AUTO_PLAN && isPlanId(env.AUTO_PLAN) ? env.AUTO_PLAN : "starter",
   };
+  cached.topK = Math.min(cached.topK, getPlan(cached.planId).streamsAtOnce);
   return cached;
 }
 

@@ -14,6 +14,7 @@ export {
   TwitchAuthError,
   TwitchRateLimitError,
   RenderError,
+  PlanLimitError,
   isAppError,
   toUserMessage,
   type ErrorCode,
@@ -65,3 +66,26 @@ export {
   type AutoSettings,
 } from "./auto-settings";
 export type { CandidateMoment, ChatEvent, ClipRecord, WatchedStream } from "./moments";
+
+export {
+  CAPTION_STYLE_IDS,
+  PLAN_BY_ID,
+  PLANS,
+  captionStylesFor,
+  getPlan,
+  isPlanId,
+  startOfUtcMonth,
+  type CaptionStyleId,
+  type Plan,
+  type PlanId,
+} from "./plans";
+export {
+  assertAiTitles,
+  assertCaptionStyle,
+  assertClipsThisMonth,
+  assertConcurrentStreams,
+  canUseAiTitles,
+  capConcurrentStreams,
+  evaluatePlanGate,
+  type PlanUsage,
+} from "./plan-gates";

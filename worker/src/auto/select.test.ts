@@ -35,6 +35,7 @@ const base: AutoSettings = {
   runSeconds: undefined,
   dataDir: "/tmp/data",
   streamlinkPath: "streamlink",
+  planId: "starter",
 };
 
 const pool = [

@@ -120,6 +120,16 @@ export class SupabaseClipRepository implements ClipperRepository {
     }));
   }
 
+  async countClipsSince(isoTimestamp: string): Promise<number> {
+    const { count, error } = await this.client
+      .from("clips")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", isoTimestamp)
+      .in("status", ["ready", "rendering"]);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
   close(): void {
     // The HTTP client has no persistent connection to close.
   }

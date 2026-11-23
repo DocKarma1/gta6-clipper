@@ -154,6 +154,15 @@ export class SqliteClipRepository implements ClipperRepository {
     }));
   }
 
+  async countClipsSince(isoTimestamp: string): Promise<number> {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM clips WHERE created_at >= ? AND status IN ('ready', 'rendering')`,
+      )
+      .get(isoTimestamp) as { n: number } | undefined;
+    return Number(row?.n ?? 0);
+  }
+
   close(): void {
     this.db.close();
   }
