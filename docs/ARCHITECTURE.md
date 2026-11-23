@@ -52,4 +52,4 @@ Phase numbers match `docs/PROJECT_PLAN.md` (the plan's phases 2–8; treat any "
 - **Phase 7 (auto-post).** Add official destination clients (`packages/youtube` upload, later Meta and TikTok) called from `worker/src` publish jobs after Clip Queue approval. API review state lives in the database; the UI only reflects it.
 - **Phase 8 (billing and launch).** Stripe webhooks in `apps/web/app/api`, plan gates in the server layer, and a move off Vercel Hobby before the first real charge. Worker and Helix code should not need to change.
 
-Rules that stay true in every phase: official APIs only, permission receipts before clipping someone else's stream, media work stays on the VPS, and secrets never appear in logs, HTML, or git.
+Rules that stay true in every phase: official APIs only, a visible streamer credit on every clip (the auto worker has no approval gate, so the operator carries the copyright/DMCA risk of what they publish), media work stays on the VPS, and secrets never appear in logs, HTML, or git.

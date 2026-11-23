@@ -89,3 +89,5 @@ export {
   evaluatePlanGate,
   type PlanUsage,
 } from "./plan-gates";
+
+export type { Database, Json } from "./database.types";

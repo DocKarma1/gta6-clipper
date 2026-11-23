@@ -79,7 +79,6 @@ export class AutoPipeline {
     log.info(
       {
         topK: this.options.settings.topK,
-        requirePermission: this.options.settings.requirePermission,
         writeLocalOnly: this.options.settings.writeLocalOnly,
         pollIntervalMs: this.options.settings.pollIntervalMs,
       },

@@ -24,8 +24,6 @@ const base: AutoSettings = {
   languages: [],
   allowList: [],
   denyList: [],
-  requirePermission: true,
-  permittedChannels: [],
   writeLocalOnly: true,
   segmentSeconds: 10,
   bufferSeconds: 120,
@@ -46,26 +44,17 @@ const pool = [
 ];
 
 describe("selectStreams", () => {
-  it("returns no streams when permission is required and the allowlist is empty", () => {
-    assert.deepEqual(selectStreams(pool, base), []);
-  });
-
-  it("keeps only permitted channels and the top K by viewers", () => {
-    const result = selectStreams(pool, {
-      ...base,
-      permittedChannels: ["delta", "alpha", "charlie"],
-      topK: 2,
-    });
+  it("picks the top K live streams by viewers without any approval step", () => {
+    const result = selectStreams(pool, { ...base, topK: 2 });
     assert.deepEqual(
       result.map((item) => item.streamerLogin),
-      ["alpha", "charlie"],
+      ["alpha", "bravo"],
     );
   });
 
-  it("honours language filters, deny lists, and an allow list when permission is off", () => {
+  it("honours language filters, deny lists, and an allow list", () => {
     const result = selectStreams(pool, {
       ...base,
-      requirePermission: false,
       languages: ["en"],
       denyList: ["alpha"],
       allowList: ["alpha", "bravo", "charlie", "delta"],

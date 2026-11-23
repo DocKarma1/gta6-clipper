@@ -145,18 +145,9 @@ export type Database = {
           channel_login: string;
           confirmed_at: string;
           confirmed_by: string | null;
-          evidence_url: string | null;
-          granted_on: string | null;
           id: string;
           notes: string | null;
-          requested_at: string | null;
-          revoke_reason: string | null;
-          revoked_at: string | null;
-          revoked_by: string | null;
-          source: string | null;
-          status: string;
-          updated_at: string;
-          updated_by: string | null;
+          source: string;
           workspace_id: string;
         };
         Insert: {
@@ -164,18 +155,9 @@ export type Database = {
           channel_login: string;
           confirmed_at?: string;
           confirmed_by?: string | null;
-          evidence_url?: string | null;
-          granted_on?: string | null;
           id?: string;
           notes?: string | null;
-          requested_at?: string | null;
-          revoke_reason?: string | null;
-          revoked_at?: string | null;
-          revoked_by?: string | null;
-          source?: string | null;
-          status?: string;
-          updated_at?: string;
-          updated_by?: string | null;
+          source: string;
           workspace_id: string;
         };
         Update: {
@@ -183,38 +165,15 @@ export type Database = {
           channel_login?: string;
           confirmed_at?: string;
           confirmed_by?: string | null;
-          evidence_url?: string | null;
-          granted_on?: string | null;
           id?: string;
           notes?: string | null;
-          requested_at?: string | null;
-          revoke_reason?: string | null;
-          revoked_at?: string | null;
-          revoked_by?: string | null;
-          source?: string | null;
-          status?: string;
-          updated_at?: string;
-          updated_by?: string | null;
+          source?: string;
           workspace_id?: string;
         };
         Relationships: [
           {
             foreignKeyName: "permission_receipts_confirmed_by_fkey";
             columns: ["confirmed_by"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "permission_receipts_revoked_by_fkey";
-            columns: ["revoked_by"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "permission_receipts_updated_by_fkey";
-            columns: ["updated_by"];
             isOneToOne: false;
             referencedRelation: "users";
             referencedColumns: ["id"];
@@ -431,45 +390,6 @@ export type Database = {
             foreignKeyName: "workspace_members_workspace_id_fkey";
             columns: ["workspace_id"];
             isOneToOne: false;
-            referencedRelation: "workspaces";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      workspace_settings: {
-        Row: {
-          require_permission: boolean;
-          require_permission_acknowledged_at: string | null;
-          updated_at: string;
-          updated_by: string | null;
-          workspace_id: string;
-        };
-        Insert: {
-          require_permission?: boolean;
-          require_permission_acknowledged_at?: string | null;
-          updated_at?: string;
-          updated_by?: string | null;
-          workspace_id: string;
-        };
-        Update: {
-          require_permission?: boolean;
-          require_permission_acknowledged_at?: string | null;
-          updated_at?: string;
-          updated_by?: string | null;
-          workspace_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "workspace_settings_updated_by_fkey";
-            columns: ["updated_by"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "workspace_settings_workspace_id_fkey";
-            columns: ["workspace_id"];
-            isOneToOne: true;
             referencedRelation: "workspaces";
             referencedColumns: ["id"];
           },

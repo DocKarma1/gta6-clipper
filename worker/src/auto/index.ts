@@ -7,11 +7,6 @@ const log = getLogger("worker.auto");
 async function main(): Promise<void> {
   getTwitchCredentials();
   const settings = getAutoSettings();
-  if (settings.requirePermission && settings.permittedChannels.length === 0) {
-    log.warn(
-      "requirePermission is true and AUTO_PERMITTED_CHANNELS is empty, so no streams will be watched. Set permitted channels, or explicitly set AUTO_REQUIRE_PERMISSION=false for a local write-only test run.",
-    );
-  }
   const repository = createClipperRepository(settings.dataDir);
   const sampleOutputDir = process.env.AUTO_SAMPLE_DIR;
   const pipeline = new AutoPipeline({

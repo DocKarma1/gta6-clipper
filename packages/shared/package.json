@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./database-types": {
+      "types": "./src/database.types.ts",
+      "default": "./src/database.types.ts"
     }
   },
   "dependencies": {

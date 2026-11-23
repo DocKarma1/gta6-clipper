@@ -37,8 +37,6 @@ const autoSchema = z.object({
   AUTO_LANGUAGES: csvFromEnv,
   AUTO_ALLOW_LIST: csvFromEnv,
   AUTO_DENY_LIST: csvFromEnv,
-  AUTO_REQUIRE_PERMISSION: boolFromEnv,
-  AUTO_PERMITTED_CHANNELS: csvFromEnv,
   AUTO_WRITE_LOCAL_ONLY: boolFromEnv,
   AUTO_SEGMENT_SECONDS: z.coerce.number().int().positive().default(10),
   AUTO_BUFFER_SECONDS: z.coerce.number().int().positive().default(120),
@@ -57,8 +55,6 @@ export type AutoSettings = {
   languages: string[];
   allowList: string[];
   denyList: string[];
-  requirePermission: boolean;
-  permittedChannels: string[];
   writeLocalOnly: boolean;
   segmentSeconds: number;
   bufferSeconds: number;
@@ -94,8 +90,6 @@ export function getAutoSettings(): AutoSettings {
     languages: env.AUTO_LANGUAGES ?? [],
     allowList: env.AUTO_ALLOW_LIST ?? [],
     denyList: env.AUTO_DENY_LIST ?? [],
-    requirePermission: env.AUTO_REQUIRE_PERMISSION ?? true,
-    permittedChannels: env.AUTO_PERMITTED_CHANNELS ?? [],
     writeLocalOnly: env.AUTO_WRITE_LOCAL_ONLY ?? true,
     segmentSeconds: env.AUTO_SEGMENT_SECONDS,
     bufferSeconds: env.AUTO_BUFFER_SECONDS,
