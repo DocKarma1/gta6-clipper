@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+
+# env and secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# next / typescript
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# worker / media scratch
+worker/.data/
+*.mp4
+*.wav
+*.srt
+*.ass
+models/
+*.bin
+*.gguf
+
+# logs and OS
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# coverage / caches (regenerable)
+coverage/
+.cache/
+.turbo/

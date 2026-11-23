@@ -1,0 +1,20 @@
+{
+  "name": "gta6-clipper",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Original starter for a GTA 6 live-clipping desk: Next.js app plus a worker for ffmpeg and self-hosted Whisper.",
+  "workspaces": [
+    "apps/web",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=web",
+    "dev:web": "npm run dev --workspace=web",
+    "dev:worker": "npm run dev --workspace=worker",
+    "build": "npm run build --workspace=web && npm run build --workspace=worker",
+    "lint": "npm run lint --workspace=web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
