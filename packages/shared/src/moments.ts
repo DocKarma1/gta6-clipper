@@ -6,8 +6,16 @@ export type ChatEvent = {
   receivedAt: string;
 };
 
+export type MomentKind = "chat_spike" | "question_reply";
+
 export type CandidateMoment = {
   id: string;
+  /** Defaults to "chat_spike". */
+  kind?: MomentKind;
+  /** question_reply only: when the question was asked (video/capture clock for speech). */
+  questionAt?: string;
+  questionSource?: "chat" | "speech";
+  questionText?: string;
   channelLogin: string;
   channelId: string | undefined;
   startedAt: string;
@@ -46,6 +54,7 @@ export type ClipRecord = {
   /** Seconds from the start of the MP4 to the peak (thumbnail frame). */
   peakOffsetSeconds?: number;
   hypeScore?: number;
+  clipType?: MomentKind;
 };
 
 export type WatchedStream = {

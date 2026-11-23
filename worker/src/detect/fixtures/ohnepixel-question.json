@@ -1,0 +1,278 @@
+{
+  "source": "/workspace/gta6-clipper-samples/live-e2e/ohnepixel-14439894-raw.mp4 (faster-whisper tiny, 23 Nov 2026) + moment 14439894 from data/clipper.sqlite",
+  "channelLogin": "ohnepixel",
+  "rawClipStartAt": "2026-11-23T15:34:14.800Z",
+  "moment": {
+    "startedAt": "2026-11-23T15:34:29.800Z",
+    "peakAt": "2026-11-23T15:34:34.800Z",
+    "messageRate": 16.0,
+    "baselineRate": 8.69
+  },
+  "words": [
+    {
+      "text": "All",
+      "start": 1.26,
+      "end": 1.88
+    },
+    {
+      "text": "right,",
+      "start": 1.88,
+      "end": 1.88
+    },
+    {
+      "text": "that's",
+      "start": 2.04,
+      "end": 2.18
+    },
+    {
+      "text": "all",
+      "start": 2.18,
+      "end": 2.3
+    },
+    {
+      "text": "that's",
+      "start": 2.3,
+      "end": 2.58
+    },
+    {
+      "text": "all",
+      "start": 2.58,
+      "end": 3.4
+    },
+    {
+      "text": "that's",
+      "start": 3.4,
+      "end": 4.34
+    },
+    {
+      "text": "all",
+      "start": 4.34,
+      "end": 4.62
+    },
+    {
+      "text": "What",
+      "start": 4.62,
+      "end": 4.88
+    },
+    {
+      "text": "the",
+      "start": 4.88,
+      "end": 5.0
+    },
+    {
+      "text": "fuck",
+      "start": 5.0,
+      "end": 6.08
+    },
+    {
+      "text": "I'm",
+      "start": 7.59,
+      "end": 7.81
+    },
+    {
+      "text": "back",
+      "start": 7.81,
+      "end": 7.95
+    },
+    {
+      "text": "on",
+      "start": 7.95,
+      "end": 8.11
+    },
+    {
+      "text": "YouTube",
+      "start": 8.11,
+      "end": 8.55
+    },
+    {
+      "text": "Back",
+      "start": 8.55,
+      "end": 8.55
+    },
+    {
+      "text": "on",
+      "start": 8.55,
+      "end": 10.01
+    },
+    {
+      "text": "YouTube",
+      "start": 10.01,
+      "end": 10.79
+    },
+    {
+      "text": "Did",
+      "start": 10.79,
+      "end": 11.21
+    },
+    {
+      "text": "you",
+      "start": 11.21,
+      "end": 11.41
+    },
+    {
+      "text": "ever",
+      "start": 11.41,
+      "end": 11.61
+    },
+    {
+      "text": "subscribe",
+      "start": 11.61,
+      "end": 11.99
+    },
+    {
+      "text": "to",
+      "start": 11.99,
+      "end": 12.21
+    },
+    {
+      "text": "something",
+      "start": 12.21,
+      "end": 12.53
+    },
+    {
+      "text": "or",
+      "start": 12.53,
+      "end": 12.77
+    },
+    {
+      "text": "no?",
+      "start": 12.77,
+      "end": 13.49
+    },
+    {
+      "text": "If",
+      "start": 13.89,
+      "end": 14.33
+    },
+    {
+      "text": "your",
+      "start": 14.33,
+      "end": 14.59
+    },
+    {
+      "text": "bro",
+      "start": 14.59,
+      "end": 14.79
+    },
+    {
+      "text": "come",
+      "start": 14.79,
+      "end": 14.99
+    },
+    {
+      "text": "over,",
+      "start": 14.99,
+      "end": 15.21
+    },
+    {
+      "text": "that",
+      "start": 15.27,
+      "end": 15.43
+    },
+    {
+      "text": "should",
+      "start": 15.43,
+      "end": 15.61
+    },
+    {
+      "text": "free",
+      "start": 15.61,
+      "end": 15.85
+    },
+    {
+      "text": "out",
+      "start": 15.85,
+      "end": 16.07
+    },
+    {
+      "text": "there.",
+      "start": 16.07,
+      "end": 16.97
+    },
+    {
+      "text": "What",
+      "start": 17.89,
+      "end": 18.33
+    },
+    {
+      "text": "are",
+      "start": 18.33,
+      "end": 18.43
+    },
+    {
+      "text": "you",
+      "start": 18.43,
+      "end": 18.51
+    },
+    {
+      "text": "doing?",
+      "start": 18.51,
+      "end": 18.73
+    },
+    {
+      "text": "What",
+      "start": 18.85,
+      "end": 18.87
+    },
+    {
+      "text": "are",
+      "start": 18.87,
+      "end": 18.99
+    },
+    {
+      "text": "you",
+      "start": 18.99,
+      "end": 19.05
+    },
+    {
+      "text": "doing?",
+      "start": 19.05,
+      "end": 19.25
+    },
+    {
+      "text": "No",
+      "start": 21.89,
+      "end": 22.33
+    },
+    {
+      "text": "Yeah,",
+      "start": 23.75,
+      "end": 24.19
+    },
+    {
+      "text": "yeah,",
+      "start": 24.19,
+      "end": 24.55
+    },
+    {
+      "text": "yeah,",
+      "start": 24.55,
+      "end": 25.15
+    },
+    {
+      "text": "yeah,",
+      "start": 25.25,
+      "end": 25.25
+    },
+    {
+      "text": "yeah,",
+      "start": 25.27,
+      "end": 25.27
+    },
+    {
+      "text": "yeah,",
+      "start": 25.33,
+      "end": 25.33
+    },
+    {
+      "text": "let's",
+      "start": 25.39,
+      "end": 25.49
+    },
+    {
+      "text": "go",
+      "start": 25.49,
+      "end": 25.71
+    }
+  ]
+}
