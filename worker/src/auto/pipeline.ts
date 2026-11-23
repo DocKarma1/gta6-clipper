@@ -255,6 +255,11 @@ export class AutoPipeline {
       await this.options.repository.saveClip(record);
       return;
     }
+    const probed = extracted ? await probeMediaDuration(sourcePath) : undefined;
+    if (probed && probed > 0) {
+      record.durationSeconds = probed;
+    }
+    const renderDuration = record.durationSeconds;
     try {
       let words: TimedWord[] = [];
       let transcriptText = "";
@@ -305,7 +310,7 @@ export class AutoPipeline {
         layout,
         words,
         credit: { login: moment.channelLogin },
-        durationSeconds,
+        durationSeconds: renderDuration,
         includeAudio: true,
       });
       await extractPng(outputPath, posterPath, Math.min(8, durationSeconds / 2));
@@ -363,4 +368,27 @@ function extractPng(videoPath: string, pngPath: string, atSeconds: number): Prom
 async function writeSidecar(filePath: string, payload: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(payload, null, 2));
+}
+
+function probeMediaDuration(filePath: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const child = spawn("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "csv=p=0",
+      filePath,
+    ]);
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.on("close", (code) => {
+      const value = Number.parseFloat(stdout.trim());
+      resolve(code === 0 && Number.isFinite(value) && value > 0 ? value : undefined);
+    });
+    child.on("error", () => resolve(undefined));
+  });
 }

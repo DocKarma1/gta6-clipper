@@ -33,20 +33,34 @@ type PythonResult = {
   error?: string;
 };
 
+export function evenCropRect(rect: CropRect, bounds?: SourceSize): CropRect {
+  const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
+  const widthBound = bounds?.width ?? Number.MAX_SAFE_INTEGER;
+  const heightBound = bounds?.height ?? Number.MAX_SAFE_INTEGER;
+  const x = even(rect.x);
+  const y = even(rect.y);
+  const width = even(rect.width);
+  const height = even(rect.height);
+  return {
+    x: Math.max(0, Math.min(x, widthBound - 2)),
+    y: Math.max(0, Math.min(y, heightBound - 2)),
+    width: Math.max(2, Math.min(width, widthBound - x)),
+    height: Math.max(2, Math.min(height, heightBound - y)),
+  };
+}
+
 export function scaleCropRect(rect: CropRect, from: SourceSize, to: SourceSize): CropRect {
   const sx = to.width / from.width;
   const sy = to.height / from.height;
-  const even = (value: number) => Math.max(2, Math.round(value / 2) * 2);
-  const x = even(rect.x * sx);
-  const y = even(rect.y * sy);
-  const width = even(rect.width * sx);
-  const height = even(rect.height * sy);
-  return {
-    x: Math.max(0, Math.min(x, to.width - 2)),
-    y: Math.max(0, Math.min(y, to.height - 2)),
-    width: Math.max(2, Math.min(width, to.width - x)),
-    height: Math.max(2, Math.min(height, to.height - y)),
-  };
+  return evenCropRect(
+    {
+      x: rect.x * sx,
+      y: rect.y * sy,
+      width: rect.width * sx,
+      height: rect.height * sy,
+    },
+    to,
+  );
 }
 
 export function shouldUseFacecam(
@@ -150,7 +164,10 @@ export class FacecamDetector {
       if (!parsed.ok || !parsed.rect || parsed.confidence === undefined) return undefined;
       const from = { width: parsed.width ?? 0, height: parsed.height ?? 0 };
       if (from.width <= 0 || from.height <= 0) return undefined;
-      const rect = scaleTo ? scaleCropRect(parsed.rect, from, scaleTo) : parsed.rect;
+      const rect = evenCropRect(
+        scaleTo ? scaleCropRect(parsed.rect, from, scaleTo) : parsed.rect,
+        scaleTo ?? from,
+      );
       return {
         rect,
         confidence: parsed.confidence,

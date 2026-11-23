@@ -45,7 +45,7 @@ export async function renderVerticalShort(
     });
   }
 
-  const source = job.source ?? { width: 1920, height: 1080 };
+  const source = job.source ?? (await probeSourceSize(job.inputPath));
   const graph = buildVerticalLayoutFilter({ layout: job.layout, source });
   const ass = buildAssDocument({
     layout: job.layout,
@@ -82,6 +82,46 @@ export async function renderVerticalShort(
 
   await runFfmpeg(job.ffmpegPath ?? "ffmpeg", args);
   return { assPath, outputPath: job.outputPath };
+}
+
+async function probeSourceSize(filePath: string): Promise<SourceSize> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "csv=p=0:s=x",
+      filePath,
+    ]);
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", () => {
+      // Discard stderr; a missing size is reported below.
+    });
+    child.on("error", (error) => {
+      reject(
+        new RenderError("ffprobe could not be started.", { code: "RENDER_FAILED", cause: error }),
+      );
+    });
+    child.on("close", (code) => {
+      const match = /^(\d+)x(\d+)/.exec(stdout.trim());
+      if (code !== 0 || !match) {
+        reject(
+          new RenderError("Could not read the source video size.", {
+            code: "RENDER_FAILED",
+          }),
+        );
+        return;
+      }
+      resolve({ width: Number(match[1]), height: Number(match[2]) });
+    });
+  });
 }
 
 function runFfmpeg(binary: string, args: string[]): Promise<void> {
