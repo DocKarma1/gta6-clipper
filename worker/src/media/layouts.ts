@@ -150,6 +150,18 @@ export function escapeFfmpegFilterPath(filePath: string): string {
     .replaceAll("]", "\\]");
 }
 
+/**
+ * A file path as a quoted filter option value for -filter_complex. Windows drive paths are
+ * switched to forward slashes, ':' is escaped for the option parser and the whole value is
+ * single-quoted so the filtergraph parser passes the escapes through (C:\x -> 'C\:/x').
+ */
+export function quoteFfmpegFilterPath(filePath: string): string {
+  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(filePath) || process.platform === "win32";
+  const normalized = isWindowsPath ? filePath.replaceAll("\\", "/") : filePath;
+  const optionLevel = normalized.replaceAll(":", "\\:");
+  return `'${optionLevel.replaceAll("'", "'\\''")}'`;
+}
+
 export type RenderArgsInput = {
   inputPath: string;
   outputPath: string;
@@ -244,8 +256,8 @@ export function buildRenderArgs(input: RenderArgsInput): string[] {
   let filterComplex = input.filterComplex;
   let mapLabel = input.outputLabel;
   if (input.assPath) {
-    const escaped = escapeFfmpegFilterPath(input.assPath);
-    const fonts = input.fontsDir ? `:fontsdir=${escapeFfmpegFilterPath(input.fontsDir)}` : "";
+    const escaped = quoteFfmpegFilterPath(input.assPath);
+    const fonts = input.fontsDir ? `:fontsdir=${quoteFfmpegFilterPath(input.fontsDir)}` : "";
     filterComplex = `${filterComplex};[${input.outputLabel}]ass=filename=${escaped}${fonts}[vsub]`;
     mapLabel = "vsub";
   }

@@ -6,6 +6,7 @@ import {
   buildVerticalLayoutFilter,
   cropFilter,
   escapeFfmpegFilterPath,
+  quoteFfmpegFilterPath,
 } from "./layouts";
 
 const source = { width: 1920, height: 1080 };
@@ -131,5 +132,18 @@ describe("buildRenderArgs", () => {
 describe("escapeFfmpegFilterPath", () => {
   it("escapes characters that would break a filter argument", () => {
     assert.equal(escapeFfmpegFilterPath("/tmp/title: take 1.ass"), "/tmp/title\\: take 1.ass");
+  });
+});
+
+describe("quoteFfmpegFilterPath", () => {
+  it("quotes Windows drive paths with forward slashes and an escaped colon", () => {
+    assert.equal(
+      quoteFfmpegFilterPath("C:\\Users\\Karma\\AppData\\Local\\Temp\\clipper-ass-1\\captions.ass"),
+      "'C\\:/Users/Karma/AppData/Local/Temp/clipper-ass-1/captions.ass'",
+    );
+  });
+  it("quotes POSIX paths and escapes colons", () => {
+    if (process.platform === "win32") return;
+    assert.equal(quoteFfmpegFilterPath("/tmp/a: b [1].ass"), "'/tmp/a\\: b [1].ass'");
   });
 });

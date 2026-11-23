@@ -221,6 +221,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 export function defaultFontsDir(): string {
+  if (process.platform === "win32") return `${process.env.WINDIR ?? "C:\\Windows"}\\Fonts`;
   return "/usr/share/fonts/truetype/dejavu";
 }
 
