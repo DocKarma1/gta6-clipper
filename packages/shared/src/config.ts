@@ -37,8 +37,15 @@ const envSchema = z.object({
   WHISPER_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).default("small")),
   WHISPER_DEVICE: z.preprocess(emptyToUndefined, z.string().min(1).default("cpu")),
   WHISPER_PYTHON: z.preprocess(emptyToUndefined, z.string().min(1).default("python3")),
-  LLM_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default("http://127.0.0.1:11434")),
-  LLM_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).default("llama3.2")),
+  /** Local Ollama server for all AI text (titles, descriptions, hashtags, hooks). */
+  OLLAMA_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  OLLAMA_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+  OLLAMA_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
+  /** Language for generated copy: en or sv. */
+  AI_LANGUAGE: z.preprocess(emptyToUndefined, z.enum(["en", "sv"]).default("en")),
+  /** Legacy aliases for OLLAMA_URL / OLLAMA_MODEL. */
+  LLM_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  LLM_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   GROQ_API_KEY: nonEmptyString,
   GEMINI_API_KEY: nonEmptyString,
 
@@ -69,6 +76,24 @@ const envSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
+
+export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+/** ~3B instruct model: fast on CPU, ~2 GB. Alternatives: qwen2.5:7b-instruct, gemma2:2b, mistral:7b-instruct. */
+export const DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
+
+export function getOllamaSettings(config: AppConfig = getConfig()): {
+  url: string;
+  model: string;
+  timeoutMs: number;
+  language: "en" | "sv";
+} {
+  return {
+    url: (config.OLLAMA_URL ?? config.LLM_BASE_URL ?? DEFAULT_OLLAMA_URL).replace(/\/+$/u, ""),
+    model: config.OLLAMA_MODEL ?? config.LLM_MODEL ?? DEFAULT_OLLAMA_MODEL,
+    timeoutMs: config.OLLAMA_TIMEOUT_MS,
+    language: config.AI_LANGUAGE,
+  };
+}
 
 export type TwitchCredentials = {
   clientId: string;

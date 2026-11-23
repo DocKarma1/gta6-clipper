@@ -1,5 +1,8 @@
 export {
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OLLAMA_URL,
   getConfig,
+  getOllamaSettings,
   getTwitchCredentials,
   loadRepoEnv,
   findRepoRoot,
@@ -66,13 +69,7 @@ export {
   normalizeLogin,
   type AutoSettings,
 } from "./auto-settings";
-export type {
-  CandidateMoment,
-  ChatEvent,
-  ClipRecord,
-  MomentKind,
-  WatchedStream,
-} from "./moments";
+export type { CandidateMoment, ChatEvent, ClipRecord, MomentKind, WatchedStream } from "./moments";
 
 export {
   CAPTION_STYLE_IDS,

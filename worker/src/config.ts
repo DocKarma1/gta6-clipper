@@ -1,4 +1,4 @@
-import { getConfig } from "@gta6-clipper/shared";
+import { getConfig, getOllamaSettings } from "@gta6-clipper/shared";
 
 export function getWorkerConfig() {
   const config = getConfig();
@@ -9,7 +9,6 @@ export function getWorkerConfig() {
     whisperModel: config.WHISPER_MODEL,
     whisperDevice: config.WHISPER_DEVICE,
     whisperPython: config.WHISPER_PYTHON,
-    llmBaseUrl: config.LLM_BASE_URL,
-    llmModel: config.LLM_MODEL,
+    ollama: getOllamaSettings(config),
   };
 }

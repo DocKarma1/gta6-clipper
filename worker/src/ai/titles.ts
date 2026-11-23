@@ -1,12 +1,17 @@
-import { canUseAiTitles, getConfig, getLogger, type PlanId } from "@gta6-clipper/shared";
+import { z } from "zod";
+import { canUseAiTitles, getLogger, getOllamaSettings, type PlanId } from "@gta6-clipper/shared";
+import { OllamaClient } from "./ollama";
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
+export type CopyLanguage = "en" | "sv";
 
 export type TitlePack = {
   platform: Platform;
   title: string;
   description: string;
   hashtags: string[];
+  /** Short all-caps overlay text for the blurred-background layout. */
+  hookText: string;
   source: "llm" | "template";
 };
 
@@ -17,24 +22,53 @@ export type TitleInput = {
   channelLogin: string;
   reasons: string[];
   platforms?: Platform[];
+  language?: CopyLanguage;
+  /** question_reply clips: the question the streamer asked. */
+  questionText?: string;
 };
 
 const log = getLogger("worker.titles");
 
-let llmAvailable: boolean | undefined;
-
 const DEFAULT_HASHTAGS = ["GTA6", "GTAVI", "Twitch", "clip", "fyp"];
+const ALL_PLATFORMS: Platform[] = ["youtube", "tiktok", "instagram", "facebook"];
+
+/** Per-platform title limits (characters). */
+const TITLE_LIMIT: Record<Platform, number> = {
+  youtube: 90,
+  tiktok: 100,
+  instagram: 100,
+  facebook: 100,
+};
+
+const TEMPLATE_TEXT = {
+  en: {
+    clip: "CLIP IT",
+    flood: "CHAT LOST IT",
+    question: "CHAT ANSWERED",
+    play: "WHAT A PLAY",
+    description: (login: string) => `A live GTA 6 moment from ${login} on Twitch.`,
+  },
+  sv: {
+    clip: "KLIPP DET",
+    flood: "CHATTEN TAPPADE DET",
+    question: "CHATTEN SVARADE",
+    play: "VILKET DRAG",
+    description: (login: string) => `Ett live-ögonblick i GTA 6 från ${login} på Twitch.`,
+  },
+} as const;
 
 export function templateHookTitle(
-  input: Pick<TitleInput, "transcript" | "streamTitle" | "reasons">,
+  input: Pick<TitleInput, "transcript" | "streamTitle" | "reasons" | "language">,
 ): string {
-  if (input.reasons.some((reason) => /clip/i.test(reason))) return "CLIP IT";
-  if (input.reasons.includes("emote-flood")) return "CHAT LOST IT";
+  const text = TEMPLATE_TEXT[input.language ?? "en"];
+  if (input.reasons.includes("question-reply")) return text.question;
+  if (input.reasons.some((reason) => /clip/i.test(reason))) return text.clip;
+  if (input.reasons.includes("emote-flood")) return text.flood;
   const spoken = firstSentence(input.transcript);
   if (spoken) return spoken;
   const stream = input.streamTitle.trim();
   if (stream) return truncate(stream, 48);
-  return "WHAT A PLAY";
+  return text.play;
 }
 
 export function templateHashtags(channelLogin: string): string[] {
@@ -45,102 +79,107 @@ export function templateHashtags(channelLogin: string): string[] {
 }
 
 export function buildTemplatePacks(input: TitleInput): TitlePack[] {
-  const title = templateHookTitle(input);
+  const language = input.language ?? "en";
+  const title = templateHookTitle({ ...input, language });
   const hashtags = templateHashtags(input.channelLogin);
-  const platforms =
-    input.platforms ?? (["youtube", "tiktok", "instagram", "facebook"] satisfies Platform[]);
   const description = input.transcript
     ? truncate(input.transcript, 180)
-    : `A live GTA 6 moment from ${input.channelLogin} on Twitch.`;
-  return platforms.map((platform) => ({
+    : TEMPLATE_TEXT[language].description(input.channelLogin);
+  const hookText = truncate(title.toUpperCase(), 32);
+  return (input.platforms ?? ALL_PLATFORMS).map((platform) => ({
     platform,
-    title,
+    title: truncate(title, TITLE_LIMIT[platform]),
     description,
     hashtags,
+    hookText,
     source: "template" as const,
   }));
 }
 
-export async function writeTitles(input: TitleInput): Promise<TitlePack[]> {
-  const templates = buildTemplatePacks(input);
-  if (!canUseAiTitles(input.planId)) {
-    return templates;
-  }
-  const generated = await tryLocalLlm(input, templates);
-  return generated ?? templates;
+const clipCopySchema = z.object({
+  hook: z.string().trim().min(2).max(60),
+  title: z.string().trim().min(4).max(120),
+  description: z.string().trim().min(4).max(400),
+  hashtags: z.array(z.string().trim().min(1).max(40)).min(1).max(12),
+});
+export type ClipCopy = z.infer<typeof clipCopySchema>;
+
+export function buildCopyPrompt(input: TitleInput): { system: string; prompt: string } {
+  const language = input.language ?? "en";
+  const languageName = language === "sv" ? "Swedish" : "English";
+  return {
+    system: [
+      "You write short-form video copy for GTA 6 Twitch clips (YouTube Shorts, TikTok, Reels).",
+      `Write in ${languageName}. Be punchy and accurate; never invent events that are not in the transcript or chat reasons.`,
+      "No slurs, no clickbait lies, no emojis in the hook. Credit the streamer by name in the description.",
+      'Answer with JSON only: {"hook":"...","title":"...","description":"...","hashtags":["..."]}.',
+      "hook: max 32 characters, ALL CAPS, for an on-screen overlay.",
+      "title: max 90 characters. description: 1-2 sentences, max 300 characters, with the transcript's key line cleaned up (fix punctuation and casing).",
+      "hashtags: 4-8 tags without #, always include GTA6.",
+    ].join("\n"),
+    prompt: [
+      `Streamer: ${input.channelLogin} (twitch.tv/${input.channelLogin})`,
+      `Stream title: ${truncate(input.streamTitle || "unknown", 140)}`,
+      `Why chat reacted: ${input.reasons.join(", ") || "hype"}`,
+      ...(input.questionText
+        ? [`The streamer asked chat: ${truncate(input.questionText, 160)}`]
+        : []),
+      `Transcript: ${truncate(input.transcript || "none", 700)}`,
+    ].join("\n"),
+  };
 }
 
-async function tryLocalLlm(
-  input: TitleInput,
-  fallback: TitlePack[],
-): Promise<TitlePack[] | undefined> {
-  const config = getConfig();
-  const baseUrl = config.LLM_BASE_URL?.replace(/\/$/, "");
-  if (!baseUrl) return undefined;
-  if (llmAvailable === false) return undefined;
-  if (llmAvailable === undefined) {
-    try {
-      const probe = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(400) });
-      llmAvailable = probe.ok;
-    } catch {
-      llmAvailable = false;
-    }
-    if (!llmAvailable) {
-      log.info("No local LLM was available; using template titles and hashtags");
-      return undefined;
-    }
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2500);
-  try {
-    const response = await fetch(`${baseUrl}/api/generate`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: config.LLM_MODEL,
-        stream: false,
-        prompt: [
-          "Write one short all-caps hook title (max 48 characters) and 5 hashtags for a GTA 6 Twitch clip.",
-          'Return JSON only: {"title":"...","hashtags":["..."]}.',
-          `Channel: ${input.channelLogin}`,
-          `Stream title: ${input.streamTitle}`,
-          `Chat reasons: ${input.reasons.join(", ") || "hype"}`,
-          `Transcript: ${truncate(input.transcript || "none", 400)}`,
-        ].join("\n"),
-      }),
+/** Turn validated model copy into per-platform packs, merged with template tags. */
+export function packsFromCopy(copy: ClipCopy, input: TitleInput): TitlePack[] {
+  const hashtags = unique([
+    ...copy.hashtags.map((tag) => tag.replace(/^#+/u, "").replace(/\s+/gu, "")).filter(Boolean),
+    ...templateHashtags(input.channelLogin),
+  ]).slice(0, 8);
+  const hookText = truncate(copy.hook.toUpperCase(), 32);
+  return (input.platforms ?? ALL_PLATFORMS).map((platform) => ({
+    platform,
+    title: truncate(copy.title, TITLE_LIMIT[platform]),
+    description: truncate(copy.description, 300),
+    hashtags,
+    hookText,
+    source: "llm" as const,
+  }));
+}
+
+let sharedClient: OllamaClient | undefined;
+
+function defaultClient(): OllamaClient {
+  if (!sharedClient) {
+    const settings = getOllamaSettings();
+    sharedClient = new OllamaClient({
+      baseUrl: settings.url,
+      model: settings.model,
+      timeoutMs: settings.timeoutMs,
+      retries: 1,
     });
-    if (!response.ok) return undefined;
-    const payload = (await response.json()) as { response?: string };
-    const parsed = extractJson(payload.response ?? "");
-    if (!parsed?.title) return undefined;
-    const hashtags = Array.isArray(parsed.hashtags)
-      ? parsed.hashtags.map((tag) => String(tag).replace(/^#/, "")).filter(Boolean)
-      : templateHashtags(input.channelLogin);
-    log.info("Used a local LLM for clip titles");
-    return fallback.map((pack) => ({
-      ...pack,
-      title: truncate(String(parsed.title), 48),
-      hashtags: unique([...hashtags, ...pack.hashtags]).slice(0, 8),
-      source: "llm",
-    }));
-  } catch {
-    log.info("No local LLM was available; using template titles and hashtags");
-    return undefined;
-  } finally {
-    clearTimeout(timer);
   }
+  return sharedClient;
 }
 
-function extractJson(text: string): { title?: string; hashtags?: unknown } | undefined {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as { title?: string; hashtags?: unknown };
-  } catch {
-    return undefined;
-  }
+/**
+ * Titles, descriptions, hashtags, and hook text for a clip. Uses local
+ * Ollama when the plan includes AI titles and the server answers with valid
+ * JSON; otherwise the template copy. Never throws.
+ */
+export async function writeTitles(
+  input: TitleInput,
+  client: OllamaClient | undefined = undefined,
+): Promise<TitlePack[]> {
+  const language = input.language ?? getOllamaSettings().language;
+  const withLanguage = { ...input, language };
+  const templates = buildTemplatePacks(withLanguage);
+  if (!canUseAiTitles(input.planId)) return templates;
+  const ollama = client ?? defaultClient();
+  const { system, prompt } = buildCopyPrompt(withLanguage);
+  const copy = await ollama.generateJson(clipCopySchema, { system, prompt });
+  if (!copy) return templates;
+  log.info({ model: ollama.model }, "Used local Ollama for clip copy");
+  return packsFromCopy(copy, withLanguage);
 }
 
 function firstSentence(text: string): string | undefined {
