@@ -7,5 +7,7 @@ export interface ClipperRepository {
   listRecentMoments(limit: number): Promise<CandidateMoment[]>;
   listRecentClips(limit: number): Promise<ClipRecord[]>;
   countClipsSince(isoTimestamp: string): Promise<number>;
+  /** Mark clips left in "rendering" by a previous run as failed; returns how many. */
+  markInterruptedClips?(): Promise<number>;
   close?: () => void;
 }

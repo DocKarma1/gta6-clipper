@@ -54,6 +54,9 @@ const autoSchema = z.object({
   AUTO_CHAT_DELAY_SECONDS: z.coerce.number().min(0).max(20).default(3),
   AUTO_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(45),
   AUTO_RENDER_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(1),
+  AUTO_KEEP_RAW: boolFromEnv,
+  AUTO_SPEECH_QUESTION_SECONDS: z.coerce.number().int().min(0).max(600).default(30),
+  AUTO_SPEECH_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).default("tiny")),
   RENDER_PRESET: z.preprocess(
     emptyToUndefined,
     z
@@ -92,6 +95,11 @@ export type AutoSettings = {
   chatDelaySeconds: number;
   cooldownSeconds: number;
   renderConcurrency: number;
+  /** Keep the stream-copied source MP4 next to each clip (debugging). */
+  keepRaw: boolean;
+  /** Seconds between speech-question transcriptions per channel; 0 disables. */
+  speechQuestionSeconds: number;
+  speechModel: string;
   renderPreset: string;
   renderCrf: number;
   targetLufs: number;
@@ -138,6 +146,9 @@ export function getAutoSettings(): AutoSettings {
     chatDelaySeconds: env.AUTO_CHAT_DELAY_SECONDS,
     cooldownSeconds: env.AUTO_COOLDOWN_SECONDS,
     renderConcurrency: env.AUTO_RENDER_CONCURRENCY,
+    keepRaw: env.AUTO_KEEP_RAW ?? false,
+    speechQuestionSeconds: env.AUTO_SPEECH_QUESTION_SECONDS,
+    speechModel: env.AUTO_SPEECH_MODEL,
     renderPreset: env.RENDER_PRESET,
     renderCrf: env.RENDER_CRF,
     targetLufs: env.RENDER_TARGET_LUFS,

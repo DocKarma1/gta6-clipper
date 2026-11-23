@@ -25,7 +25,10 @@ export function transcribeScriptPath(): string {
   return path.join(findRepoRoot(), "worker", "scripts", "transcribe.py");
 }
 
-export async function transcribeClip(audioPath: string): Promise<Transcript> {
+export async function transcribeClip(
+  audioPath: string,
+  options: { model?: string; timeoutMs?: number } = {},
+): Promise<Transcript> {
   const config = getConfig();
   const script = transcribeScriptPath();
   const python = resolvePython();
@@ -35,8 +38,15 @@ export async function transcribeClip(audioPath: string): Promise<Transcript> {
   try {
     const { stdout } = await execFileAsync(
       python,
-      [script, audioPath, "--model", config.WHISPER_MODEL, "--device", config.WHISPER_DEVICE],
-      { timeout: 180_000, maxBuffer: 2 * 1024 * 1024 },
+      [
+        script,
+        audioPath,
+        "--model",
+        options.model ?? config.WHISPER_MODEL,
+        "--device",
+        config.WHISPER_DEVICE,
+      ],
+      { timeout: options.timeoutMs ?? 180_000, maxBuffer: 2 * 1024 * 1024 },
     );
     const parsed = JSON.parse(stdout) as Transcript;
     const words = Array.isArray(parsed.words)

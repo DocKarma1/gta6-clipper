@@ -1,5 +1,3 @@
-// Generated from the gta6-clipper Supabase project (sxtyzccezyeltpzfqhdr).
-// Regenerate after schema changes; do not edit by hand.
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
@@ -13,14 +11,21 @@ export type Database = {
       clips: {
         Row: {
           channel_login: string;
+          clip_type: string;
           created_at: string;
           duration_seconds: number;
           error_message: string | null;
+          event_at: string | null;
+          highlight_end_at: string | null;
+          highlight_start_at: string | null;
           hook_title: string;
+          hype_score: number | null;
           id: string;
           layout: string;
           moment_id: string | null;
           output_path: string;
+          peak_at: string | null;
+          peak_offset_seconds: number | null;
           poster_path: string | null;
           source_path: string;
           started_at: string;
@@ -29,14 +34,21 @@ export type Database = {
         };
         Insert: {
           channel_login: string;
+          clip_type?: string;
           created_at?: string;
           duration_seconds: number;
           error_message?: string | null;
+          event_at?: string | null;
+          highlight_end_at?: string | null;
+          highlight_start_at?: string | null;
           hook_title?: string;
+          hype_score?: number | null;
           id: string;
           layout: string;
           moment_id?: string | null;
           output_path: string;
+          peak_at?: string | null;
+          peak_offset_seconds?: number | null;
           poster_path?: string | null;
           source_path: string;
           started_at: string;
@@ -45,14 +57,21 @@ export type Database = {
         };
         Update: {
           channel_login?: string;
+          clip_type?: string;
           created_at?: string;
           duration_seconds?: number;
           error_message?: string | null;
+          event_at?: string | null;
+          highlight_end_at?: string | null;
+          highlight_start_at?: string | null;
           hook_title?: string;
+          hype_score?: number | null;
           id?: string;
           layout?: string;
           moment_id?: string | null;
           output_path?: string;
+          peak_at?: string | null;
+          peak_offset_seconds?: number | null;
           poster_path?: string | null;
           source_path?: string;
           started_at?: string;
@@ -79,13 +98,17 @@ export type Database = {
       moments: {
         Row: {
           baseline_rate: number;
+          burst_end_at: string | null;
+          burst_start_at: string | null;
           channel_id: string | null;
           channel_login: string;
           created_at: string;
           hype_score: number;
           id: string;
+          kind: string;
           message_rate: number;
           peak_at: string;
+          question_text: string | null;
           reasons: Json;
           started_at: string;
           stream_id: string | null;
@@ -94,13 +117,17 @@ export type Database = {
         };
         Insert: {
           baseline_rate?: number;
+          burst_end_at?: string | null;
+          burst_start_at?: string | null;
           channel_id?: string | null;
           channel_login: string;
           created_at?: string;
           hype_score: number;
           id: string;
+          kind?: string;
           message_rate?: number;
           peak_at: string;
+          question_text?: string | null;
           reasons?: Json;
           started_at: string;
           stream_id?: string | null;
@@ -109,13 +136,17 @@ export type Database = {
         };
         Update: {
           baseline_rate?: number;
+          burst_end_at?: string | null;
+          burst_start_at?: string | null;
           channel_id?: string | null;
           channel_login?: string;
           created_at?: string;
           hype_score?: number;
           id?: string;
+          kind?: string;
           message_rate?: number;
           peak_at?: string;
+          question_text?: string | null;
           reasons?: Json;
           started_at?: string;
           stream_id?: string | null;
@@ -358,6 +389,56 @@ export type Database = {
           twitch_user_id?: string | null;
         };
         Relationships: [];
+      };
+      watchlist_channels: {
+        Row: {
+          capture_supported: boolean;
+          created_at: string;
+          display_name: string;
+          id: string;
+          login: string;
+          note: string | null;
+          platform: string;
+          priority: number;
+          twitch_login: string | null;
+          twitch_verified: boolean;
+          workspace_id: string | null;
+        };
+        Insert: {
+          capture_supported?: boolean;
+          created_at?: string;
+          display_name: string;
+          id?: string;
+          login: string;
+          note?: string | null;
+          platform: string;
+          priority: number;
+          twitch_login?: string | null;
+          twitch_verified?: boolean;
+          workspace_id?: string | null;
+        };
+        Update: {
+          capture_supported?: boolean;
+          created_at?: string;
+          display_name?: string;
+          id?: string;
+          login?: string;
+          note?: string | null;
+          platform?: string;
+          priority?: number;
+          twitch_login?: string | null;
+          twitch_verified?: boolean;
+          workspace_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "watchlist_channels_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       workspace_members: {
         Row: {

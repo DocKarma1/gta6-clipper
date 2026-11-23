@@ -63,6 +63,54 @@ export function scaleCropRect(rect: CropRect, from: SourceSize, to: SourceSize):
   );
 }
 
+/**
+ * Reject detections that cannot be a webcam overlay: too small, too large,
+ * or outside the frame.
+ */
+export function isPlausibleFacecam(rect: CropRect, size: SourceSize): boolean {
+  if (rect.width <= 0 || rect.height <= 0) return false;
+  if (rect.x < 0 || rect.y < 0) return false;
+  if (rect.x + rect.width > size.width + 1 || rect.y + rect.height > size.height + 1) return false;
+  const area = (rect.width * rect.height) / (size.width * size.height);
+  const aspect = rect.width / rect.height;
+  return area >= 0.015 && area <= 0.4 && aspect >= 0.5 && aspect <= 2.6;
+}
+
+/** Intersection over union of two rects. */
+export function rectIoU(a: CropRect, b: CropRect): number {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = a.width * a.height + b.width * b.height - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/**
+ * Pick the best detection across several frames. A rect seen in at least two
+ * frames (IoU >= 0.5) gets a small confidence bonus; a lone detection that
+ * disagrees with the others is penalised (the camera may be hidden or moving).
+ */
+export function pickConsensusFacecam(
+  detections: readonly (FacecamDetection | undefined)[],
+): FacecamDetection | undefined {
+  const valid = detections.filter(
+    (item): item is FacecamDetection =>
+      Boolean(item) &&
+      isPlausibleFacecam(item!.rect, { width: item!.sourceWidth, height: item!.sourceHeight }),
+  );
+  if (valid.length === 0) return undefined;
+  const scored = valid.map((item) => {
+    const agree = valid.filter(
+      (other) => other !== item && rectIoU(item.rect, other.rect) >= 0.5,
+    ).length;
+    const adjust = valid.length === 1 ? 0 : agree > 0 ? 0.05 : -0.1;
+    return { ...item, confidence: Math.max(0, Math.min(1, item.confidence + adjust)) };
+  });
+  return scored.sort((a, b) => b.confidence - a.confidence)[0];
+}
+
 export function shouldUseFacecam(
   detection: FacecamDetection | undefined,
   minConfidence = FACECAM_MIN_CONFIDENCE,
@@ -189,11 +237,32 @@ export class FacecamDetector {
     imagePath: string,
     scaleTo?: SourceSize,
   ): Promise<FacecamDetection | undefined> {
+    return this.detectBestForChannel(channelLogin, [imagePath], scaleTo);
+  }
+
+  /**
+   * Detect on several frames and keep the consensus. Only confident results
+   * are cached, and a cached rect is ignored when the source size changed.
+   */
+  async detectBestForChannel(
+    channelLogin: string,
+    imagePaths: readonly string[],
+    scaleTo?: SourceSize,
+  ): Promise<FacecamDetection | undefined> {
     const cached = this.cache.get(channelLogin);
-    if (cached) return cached;
-    const detection = await this.detectImage(imagePath, scaleTo);
-    if (detection) this.cache.set(channelLogin, detection);
-    return detection;
+    if (
+      cached &&
+      (!scaleTo || (cached.sourceWidth === scaleTo.width && cached.sourceHeight === scaleTo.height))
+    ) {
+      return cached;
+    }
+    const detections: (FacecamDetection | undefined)[] = [];
+    for (const imagePath of imagePaths) {
+      detections.push(await this.detectImage(imagePath, scaleTo));
+    }
+    const best = pickConsensusFacecam(detections);
+    if (best && shouldUseFacecam(best)) this.cache.set(channelLogin, best);
+    return best;
   }
 
   accept(detection: FacecamDetection | undefined): detection is FacecamDetection {

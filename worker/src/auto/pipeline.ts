@@ -1,37 +1,34 @@
-import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { readdir, rm } from "node:fs/promises";
 import {
   assertCaptionStyle,
   assertClipsThisMonth,
   capConcurrentStreams,
   DEFAULT_WATCHLIST,
   effectiveStreamCap,
-  watchlistPriorityByLogin,
   getLogger,
   normalizeLogin,
   PlanLimitError,
   startOfUtcMonth,
+  watchlistPriorityByLogin,
   type AutoSettings,
   type CaptionStyleId,
   type CandidateMoment,
   type ClipRecord,
   type CropRect,
-  type LiveStream,
-  type TimedWord,
-  type VerticalLayout,
 } from "@gta6-clipper/shared";
 import { getAutoCandidates } from "@gta6-clipper/twitch";
 import { TwitchAnonymousIrc } from "../chat/irc";
 import { ChannelSpikeDetector } from "../detect/spikes";
-import { renderVerticalShort } from "../export/render";
+import { QuestionReplyDetector, findSpokenQuestions } from "../detect/question";
 import { StreamCapture } from "../media/capture";
 import { transcribeClip } from "../ai/transcribe";
-import { writeTitles } from "../ai/titles";
-import { FacecamDetector, shouldUseFacecam } from "../detect/facecam";
+import { FacecamDetector } from "../detect/facecam";
+import type { ClipWindow } from "../detect/highlight";
 import type { ClipperRepository } from "../repo/interface";
-import { selectStreams } from "./select";
+import { runClipJob } from "./clip-job";
+import { selectStreams, type SelectedStream } from "./select";
+import { windowForQuestion, windowForSpike, windowOverlap } from "./windows";
 
 const log = getLogger("worker.auto");
 
@@ -43,14 +40,38 @@ export type PipelineOptions = {
   sampleOutputDir?: string;
 };
 
+/** Small FIFO semaphore so a home PC renders one (or N) clips at a time. */
+class Limiter {
+  private active = 0;
+  private readonly queue: (() => void)[] = [];
+  constructor(private readonly max: number) {}
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.max) await new Promise<void>((resolve) => this.queue.push(resolve));
+    this.active += 1;
+    try {
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.queue.shift()?.();
+    }
+  }
+}
+
 export class AutoPipeline {
   private readonly irc: TwitchAnonymousIrc;
   private readonly captures = new Map<string, StreamCapture>();
   private readonly detectors = new Map<string, ChannelSpikeDetector>();
+  private readonly questions = new Map<string, QuestionReplyDetector>();
+  /** Last clip window per channel, for dedupe across detectors. */
+  private readonly lastWindows = new Map<string, ClipWindow>();
+  /** Speech already transcribed per channel (capture clock). */
+  private readonly speechUntil = new Map<string, number>();
   private readonly facecam: FacecamDetector;
-  private selected: LiveStream[] = [];
-  private pruneTimer: NodeJS.Timeout | undefined;
-  private pollTimer: NodeJS.Timeout | undefined;
+  private readonly renders: Limiter;
+  private selected: SelectedStream[] = [];
+  private timers: NodeJS.Timeout[] = [];
+  private speechBusy = false;
+  private speechCursor = 0;
   private running = false;
   readonly moments: CandidateMoment[] = [];
   readonly clips: ClipRecord[] = [];
@@ -61,29 +82,53 @@ export class AutoPipeline {
       new FacecamDetector({
         cachePath: path.join(options.settings.dataDir, "facecam-cache.json"),
       });
+    this.renders = new Limiter(options.settings.renderConcurrency);
     this.irc = new TwitchAnonymousIrc({
       onChat: (event) => {
+        this.questions.get(event.channelLogin)?.ingest(event);
         const moment = this.detectors.get(event.channelLogin)?.ingest(event);
         if (moment) void this.onMoment(moment);
       },
     });
   }
 
+  get outputDir(): string {
+    return this.options.sampleOutputDir ?? path.join(this.options.settings.dataDir, "clips");
+  }
+
   async start(): Promise<void> {
     this.running = true;
+    await this.recoverFromCrash();
     this.irc.start();
     await this.refreshSelection();
-    this.pollTimer = setInterval(() => {
-      void this.refreshSelection();
-    }, this.options.settings.pollIntervalMs);
-    this.pruneTimer = setInterval(() => {
-      void Promise.all([...this.captures.values()].map((capture) => capture.prune()));
-    }, 15_000);
+    const { settings } = this.options;
+    this.timers.push(setInterval(() => void this.refreshSelection(), settings.pollIntervalMs));
+    this.timers.push(
+      setInterval(() => {
+        void Promise.all([...this.captures.values()].map((capture) => capture.prune()));
+      }, 15_000),
+    );
+    this.timers.push(setInterval(() => this.tick(Date.now()), 1_000));
+    if (settings.speechQuestionSeconds > 0) {
+      // One channel per slot keeps Whisper's CPU use flat with up to 3 streams.
+      const slotMs = Math.max(
+        5_000,
+        Math.round(
+          (settings.speechQuestionSeconds * 1000) / Math.max(1, effectiveStreamCap(settings)),
+        ),
+      );
+      this.timers.push(setInterval(() => void this.sampleSpeech(), slotMs));
+    }
     log.info(
       {
-        topK: this.options.settings.topK,
-        writeLocalOnly: this.options.settings.writeLocalOnly,
-        pollIntervalMs: this.options.settings.pollIntervalMs,
+        streamCap: effectiveStreamCap(settings),
+        watchlist: settings.useWatchlist,
+        includeGtaV: settings.includeGtaV,
+        quality: settings.streamQuality,
+        renderConcurrency: settings.renderConcurrency,
+        speechQuestionSeconds: settings.speechQuestionSeconds,
+        writeLocalOnly: settings.writeLocalOnly,
+        pollIntervalMs: settings.pollIntervalMs,
       },
       "Auto worker started",
     );
@@ -91,8 +136,8 @@ export class AutoPipeline {
 
   async stop(): Promise<void> {
     this.running = false;
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.pruneTimer) clearInterval(this.pruneTimer);
+    for (const timer of this.timers) clearInterval(timer);
+    this.timers = [];
     this.irc.stop();
     await Promise.all([...this.captures.values()].map((capture) => capture.stop()));
     this.captures.clear();
@@ -100,6 +145,32 @@ export class AutoPipeline {
 
   getSelectedLogins(): string[] {
     return this.selected.map((stream) => stream.streamerLogin);
+  }
+
+  /** Remove half-written files and mark clips that were rendering as interrupted. */
+  private async recoverFromCrash(): Promise<void> {
+    try {
+      for (const name of await readdir(this.outputDir)) {
+        if (name.includes(".partial.") || name.endsWith(".partial") || name.startsWith(".src-")) {
+          await rm(path.join(this.outputDir, name), { force: true });
+        }
+      }
+    } catch {
+      // No output directory yet.
+    }
+    const marked = (await this.options.repository.markInterruptedClips?.()) ?? 0;
+    if (marked > 0) log.info({ clips: marked }, "Marked clips from a previous run as interrupted");
+  }
+
+  private tick(now: number): void {
+    for (const detector of this.detectors.values()) {
+      const moment = detector.tick(now);
+      if (moment) void this.onMoment(moment);
+    }
+    for (const detector of this.questions.values()) {
+      const moment = detector.tick(now);
+      if (moment) void this.onMoment(moment);
+    }
   }
 
   private async refreshSelection(): Promise<void> {
@@ -124,25 +195,29 @@ export class AutoPipeline {
       this.irc.sync(logins);
       for (const stream of next) {
         const login = normalizeLogin(stream.streamerLogin);
-        this.options.repository.upsertStream({
-          channelLogin: login,
-          channelId: undefined,
-          title: stream.title,
-          language: stream.language,
-          viewerCount: stream.viewerCount,
-          thumbnailUrl: stream.thumbnailUrl,
-          url: stream.url,
-        });
+        await this.options.repository
+          .upsertStream({
+            channelLogin: login,
+            channelId: undefined,
+            title: stream.title,
+            language: stream.language,
+            viewerCount: stream.viewerCount,
+            thumbnailUrl: stream.thumbnailUrl,
+            url: stream.url,
+          })
+          .catch(() => undefined);
         if (!this.detectors.has(login)) {
           this.detectors.set(
             login,
-            new ChannelSpikeDetector(login, {
-              cooldownMs: this.options.settings.cooldownSeconds * 1000,
-            }),
+            new ChannelSpikeDetector(login, { cooldownMs: settings.cooldownSeconds * 1000 }),
+          );
+          this.questions.set(
+            login,
+            new QuestionReplyDetector(login, { cooldownMs: settings.cooldownSeconds * 1000 }),
           );
         }
         if (!this.captures.has(login)) {
-          const capture = new StreamCapture(login, this.options.settings);
+          const capture = new StreamCapture(login, settings);
           this.captures.set(login, capture);
           void capture.start();
         }
@@ -152,6 +227,8 @@ export class AutoPipeline {
           await capture.stop();
           this.captures.delete(login);
           this.detectors.delete(login);
+          this.questions.delete(login);
+          this.speechUntil.delete(login);
         }
       }
       log.info(
@@ -169,59 +246,82 @@ export class AutoPipeline {
     }
   }
 
+  /** Transcribe the newest buffered audio of one channel and note spoken questions. */
+  private async sampleSpeech(): Promise<void> {
+    if (this.speechBusy || !this.running) return;
+    const logins = [...this.captures.keys()];
+    if (logins.length === 0) return;
+    const login = logins[this.speechCursor % logins.length]!;
+    this.speechCursor += 1;
+    const capture = this.captures.get(login);
+    const detector = this.questions.get(login);
+    if (!capture || !detector) return;
+    this.speechBusy = true;
+    const wav = path.join(this.options.settings.dataDir, "speech", `${login}.wav`);
+    try {
+      const seconds = this.options.settings.speechQuestionSeconds + 5;
+      const audio = await capture.extractRecentAudio(seconds, wav);
+      if (!audio) return;
+      const transcript = await transcribeClip(audio.path, {
+        model: this.options.settings.speechModel,
+        timeoutMs: 60_000,
+      });
+      const seenUntil = this.speechUntil.get(login) ?? 0;
+      let latest = seenUntil;
+      for (const question of findSpokenQuestions(transcript.words)) {
+        const atMs = audio.fileStartMs + question.start * 1000;
+        if (atMs <= seenUntil) continue;
+        latest = Math.max(latest, atMs);
+        detector.noteQuestion({ atMs, source: "speech", text: question.text });
+      }
+      this.speechUntil.set(login, latest);
+    } catch (error) {
+      log.debug(
+        { err: error instanceof Error ? error.message : "unknown" },
+        "Speech sample skipped",
+      );
+    } finally {
+      this.speechBusy = false;
+      await rm(wav, { force: true });
+    }
+  }
+
   private async onMoment(moment: CandidateMoment): Promise<void> {
     this.moments.push(moment);
-    await this.options.repository.saveMoment(moment);
+    await this.options.repository.saveMoment(moment).catch(() => undefined);
     log.info(
       {
         channel: moment.channelLogin,
+        kind: moment.kind ?? "chat_spike",
         hypeScore: moment.hypeScore,
         reasons: moment.reasons,
-        zScore: moment.zScore,
+        peakAt: moment.peakAt,
       },
-      "Detected a chat spike",
+      "Detected a highlight",
     );
     if (!this.running) return;
     const settings = this.options.settings;
-    await delay(settings.postRollSeconds * 1000);
+    const window =
+      moment.kind === "question_reply"
+        ? windowForQuestion(moment, settings)
+        : windowForSpike(moment, settings);
+
+    const previous = this.lastWindows.get(moment.channelLogin);
+    if (previous && windowOverlap(previous, window) > 0.5) {
+      log.info({ channel: moment.channelLogin }, "Skipped a highlight that overlaps the last clip");
+      return;
+    }
+    this.lastWindows.set(moment.channelLogin, window);
+
     const capture = this.captures.get(moment.channelLogin);
     if (!capture) return;
-    const peak = Date.parse(moment.peakAt);
-    const startMs = peak - settings.preRollSeconds * 1000;
-    const endMs = peak + settings.postRollSeconds * 1000;
-    const durationSeconds = settings.preRollSeconds + settings.postRollSeconds;
-    const sampleDir = this.options.sampleOutputDir ?? path.join(settings.dataDir, "clips");
-    const base = path.join(sampleDir, `${moment.channelLogin}-${moment.id.slice(0, 8)}`);
-    const sourcePath = `${base}-raw.mp4`;
-    const outputPath = `${base}.mp4`;
-    const posterPath = `${base}.png`;
-    const hookTitle = hookTitleFrom(moment);
-    let layout = this.layoutFor(moment.channelLogin, hookTitle);
-    const record: ClipRecord = {
-      id: randomUUID(),
-      momentId: moment.id,
-      channelLogin: moment.channelLogin,
-      layout: layout.layout,
-      sourcePath,
-      outputPath,
-      posterPath,
-      startedAt: new Date(startMs).toISOString(),
-      durationSeconds,
-      hookTitle,
-      status: "rendering",
-      errorMessage: undefined,
-      createdAt: new Date().toISOString(),
-    };
+
     try {
       const used = await this.options.repository.countClipsSince(startOfUtcMonth().toISOString());
       assertClipsThisMonth(settings.planId, used);
       assertCaptionStyle(settings.planId, "default" satisfies CaptionStyleId);
     } catch (error) {
       if (error instanceof PlanLimitError) {
-        record.status = "failed";
-        record.errorMessage = error.message;
-        this.clips.push(record);
-        await this.options.repository.saveClip(record);
         log.warn(
           { channel: moment.channelLogin, limit: error.limit },
           "Skipped a clip because of a plan limit",
@@ -230,183 +330,62 @@ export class AutoPipeline {
       }
       throw error;
     }
-    const extracted = await capture.extractWindow(startMs, endMs, sourcePath);
-    if (extracted) {
-      const detectFrame = `${base}-facecam.png`;
-      try {
-        await extractPng(sourcePath, detectFrame, Math.min(4, durationSeconds / 3));
-        const detected = await this.facecam.detectForChannel(moment.channelLogin, detectFrame);
-        if (
-          shouldUseFacecam(detected) &&
-          !this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]
-        ) {
-          layout = { layout: "stacked-split", facecam: detected.rect };
-          record.layout = layout.layout;
-          log.info(
-            {
-              channel: moment.channelLogin,
-              confidence: detected.confidence,
-              method: detected.method,
-              rect: detected.rect,
-            },
-            "Using stacked-split after facecam detection",
-          );
-        } else if (!this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]) {
-          layout = { layout: "blurred-background", hookTitle };
-          record.layout = layout.layout;
-        }
-      } catch (error) {
-        log.warn(
-          { err: error instanceof Error ? error.message : "unknown", channel: moment.channelLogin },
-          "Facecam detection skipped; using the blurred-background layout",
-        );
-        if (!this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)]) {
-          layout = { layout: "blurred-background", hookTitle };
-          record.layout = layout.layout;
-        }
-      }
+
+    // Wait until the buffer has written video past the end of the window.
+    const deadline = Date.now() + 90_000;
+    while (this.running && Date.now() < deadline) {
+      const until = await capture.bufferedUntilMs();
+      if (until !== undefined && until >= window.endMs + 1_000) break;
+      await delay(1_000);
     }
+    if (!this.running) return;
+
+    const rawPath = path.join(
+      this.outputDir,
+      `.src-${moment.channelLogin}-${moment.id.slice(0, 8)}.mp4`,
+    );
+    // Pad 3 s on both sides so silence/scene snapping has room.
+    const extracted = await capture.extractWindow(
+      window.startMs - 3_000,
+      window.endMs + 3_000,
+      rawPath,
+    );
     if (!extracted) {
-      record.status = "failed";
-      record.errorMessage = "No buffered video covered this moment.";
-      this.clips.push(record);
-      await this.options.repository.saveClip(record);
+      log.warn({ channel: moment.channelLogin }, "No buffered video covered this highlight");
       return;
     }
-    const probed = extracted ? await probeMediaDuration(sourcePath) : undefined;
-    if (probed && probed > 0) {
-      record.durationSeconds = probed;
-    }
-    const renderDuration = record.durationSeconds;
-    try {
-      let words: TimedWord[] = [];
-      let transcriptText = "";
-      try {
-        const transcript = await transcribeClip(sourcePath);
-        words = transcript.words;
-        transcriptText = transcript.text;
-        if (transcript.text) {
-          log.info(
-            { channel: moment.channelLogin, words: words.length },
-            "Transcribed clip audio for burned-in captions",
-          );
-        }
-      } catch (error) {
-        log.warn(
-          { err: error instanceof Error ? error.message : "unknown", channel: moment.channelLogin },
-          "Transcription skipped; rendering without captions",
-        );
-      }
-      const streamTitle =
-        this.selected.find((stream) => normalizeLogin(stream.streamerLogin) === moment.channelLogin)
-          ?.title ?? "";
-      const packs = await writeTitles({
-        planId: settings.planId,
-        transcript: transcriptText,
+
+    const streamTitle =
+      this.selected.find((stream) => normalizeLogin(stream.streamerLogin) === moment.channelLogin)
+        ?.title ?? "";
+    const result = await this.renders.run(() =>
+      runClipJob({
+        moment,
+        window,
+        source: { path: extracted.path, fileStartMs: extracted.fileStartMs },
+        settings,
+        outputDir: this.outputDir,
+        facecam: this.facecam,
+        facecamOverride: this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)],
         streamTitle,
-        channelLogin: moment.channelLogin,
-        reasons: moment.reasons,
-      });
-      const hook = packs[0]?.title ?? hookTitle;
-      record.hookTitle = hook;
-      if (layout.layout === "blurred-background") {
-        layout = { layout: "blurred-background", hookTitle: hook };
-      }
-      const sidecar = `${base}.json`;
-      await writeSidecar(sidecar, {
-        clipId: record.id,
-        channelLogin: moment.channelLogin,
-        hookTitle: hook,
-        hashtags: packs[0]?.hashtags ?? [],
-        titleSource: packs[0]?.source ?? "template",
-        transcript: transcriptText,
-        layout: layout.layout,
-      });
-      await renderVerticalShort({
-        inputPath: sourcePath,
-        outputPath,
-        layout,
-        words,
-        credit: { login: moment.channelLogin },
-        durationSeconds: renderDuration,
-        includeAudio: true,
-      });
-      await extractPng(outputPath, posterPath, Math.min(8, durationSeconds / 2));
-      record.status = "ready";
-    } catch (error) {
-      record.status = "failed";
-      record.errorMessage = error instanceof Error ? error.message : "Render failed";
-    }
-    this.clips.push(record);
-    await this.options.repository.saveClip(record);
+      }),
+    );
+    this.clips.push(result.record);
+    await this.options.repository.saveClip(result.record);
     log.info(
-      { channel: moment.channelLogin, status: record.status, outputPath },
+      {
+        channel: moment.channelLogin,
+        status: result.record.status,
+        outputPath: result.record.outputPath,
+        durationSeconds: result.record.durationSeconds,
+      },
       "Finished a local clip job",
     );
   }
-
-  private layoutFor(channelLogin: string, hookTitle: string): VerticalLayout {
-    const facecam = this.options.facecamByChannel?.[normalizeLogin(channelLogin)];
-    if (facecam) {
-      return { layout: "stacked-split", facecam };
-    }
-    return { layout: "blurred-background", hookTitle };
-  }
-}
-
-function hookTitleFrom(moment: CandidateMoment): string {
-  if (moment.reasons.some((reason) => reason.includes("clip"))) return "CLIP IT";
-  if (moment.reasons.includes("emote-flood")) return "CHAT LOST IT";
-  return "WHAT A PLAY";
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
-  });
-}
-
-function extractPng(videoPath: string, pngPath: string, atSeconds: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      "ffmpeg",
-      ["-hide_banner", "-y", "-ss", String(atSeconds), "-i", videoPath, "-frames:v", "1", pngPath],
-      {
-        stdio: "ignore",
-      },
-    );
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error("Could not extract a poster frame."));
-    });
-    child.on("error", reject);
-  });
-}
-
-async function writeSidecar(filePath: string, payload: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(payload, null, 2));
-}
-
-function probeMediaDuration(filePath: string): Promise<number | undefined> {
-  return new Promise((resolve) => {
-    const child = spawn("ffprobe", [
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "csv=p=0",
-      filePath,
-    ]);
-    let stdout = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.on("close", (code) => {
-      const value = Number.parseFloat(stdout.trim());
-      resolve(code === 0 && Number.isFinite(value) && value > 0 ? value : undefined);
-    });
-    child.on("error", () => resolve(undefined));
   });
 }
