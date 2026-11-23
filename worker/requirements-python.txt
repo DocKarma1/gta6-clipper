@@ -2,3 +2,4 @@
 streamlink==8.6.3
 opencv-python-headless>=4.10
 numpy
+faster-whisper>=1.1

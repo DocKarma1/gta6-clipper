@@ -15,6 +15,7 @@ import {
   type ClipRecord,
   type CropRect,
   type LiveStream,
+  type TimedWord,
   type VerticalLayout,
 } from "@gta6-clipper/shared";
 import { getLiveGta6Streams } from "@gta6-clipper/twitch";
@@ -22,6 +23,7 @@ import { TwitchAnonymousIrc } from "../chat/irc";
 import { ChannelSpikeDetector } from "../detect/spikes";
 import { renderVerticalShort } from "../export/render";
 import { StreamCapture } from "../media/capture";
+import { transcribeClip } from "../ai/transcribe";
 import { FacecamDetector, shouldUseFacecam } from "../detect/facecam";
 import type { ClipperRepository } from "../repo/interface";
 import { selectStreams } from "./select";
@@ -252,11 +254,27 @@ export class AutoPipeline {
       return;
     }
     try {
+      let words: TimedWord[] = [];
+      try {
+        const transcript = await transcribeClip(sourcePath);
+        words = transcript.words;
+        if (transcript.text) {
+          log.info(
+            { channel: moment.channelLogin, words: words.length },
+            "Transcribed clip audio for burned-in captions",
+          );
+        }
+      } catch (error) {
+        log.warn(
+          { err: error instanceof Error ? error.message : "unknown", channel: moment.channelLogin },
+          "Transcription skipped; rendering without captions",
+        );
+      }
       await renderVerticalShort({
         inputPath: sourcePath,
         outputPath,
         layout,
-        words: [],
+        words,
         credit: { login: moment.channelLogin },
         durationSeconds,
         includeAudio: true,

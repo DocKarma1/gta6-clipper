@@ -1,53 +1,64 @@
-import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { getWorkerConfig } from "../config";
+import { promisify } from "node:util";
+import { findRepoRoot, getConfig, getLogger, type TimedWord } from "@gta6-clipper/shared";
 
-export type Word = { start: number; end: number; text: string };
+const execFileAsync = promisify(execFile);
+const log = getLogger("worker.transcribe");
 
 export type Transcript = {
   text: string;
-  words: Word[];
+  language?: string;
+  words: TimedWord[];
 };
 
-/**
- * Transcribe only the cut clip (seconds, not hours) via the local
- * faster-whisper helper. No paid caption API in the default path.
- */
-export function transcribeClip(audioPath: string): Promise<Transcript> {
-  const config = getWorkerConfig();
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const script = path.resolve(here, "../../scripts/transcribe.py");
+function resolvePython(): string {
+  const configured = getConfig().WHISPER_PYTHON;
+  const venv = path.join(findRepoRoot(), ".venv", "bin", "python");
+  if (configured && configured !== "python3") return configured;
+  if (existsSync(venv)) return venv;
+  return configured || "python3";
+}
 
-  return new Promise((resolve, reject) => {
-    const child = spawn(config.whisperPython, [
-      script,
-      audioPath,
-      "--model",
-      config.whisperModel,
-      "--device",
-      config.whisperDevice,
-    ]);
+export function transcribeScriptPath(): string {
+  return path.join(findRepoRoot(), "worker", "scripts", "transcribe.py");
+}
 
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`transcribe.py exited ${code}: ${stderr || "not installed"}`));
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout) as Transcript);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  });
+export async function transcribeClip(audioPath: string): Promise<Transcript> {
+  const config = getConfig();
+  const script = transcribeScriptPath();
+  const python = resolvePython();
+  if (!existsSync(script) || !existsSync(audioPath)) {
+    return { text: "", words: [] };
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      python,
+      [script, audioPath, "--model", config.WHISPER_MODEL, "--device", config.WHISPER_DEVICE],
+      { timeout: 180_000, maxBuffer: 2 * 1024 * 1024 },
+    );
+    const parsed = JSON.parse(stdout) as Transcript;
+    const words = Array.isArray(parsed.words)
+      ? parsed.words.filter(
+          (word) =>
+            typeof word.text === "string" &&
+            word.text.trim().length > 0 &&
+            typeof word.start === "number" &&
+            typeof word.end === "number",
+        )
+      : [];
+    return {
+      text:
+        typeof parsed.text === "string" ? parsed.text : words.map((word) => word.text).join(" "),
+      ...(parsed.language ? { language: parsed.language } : {}),
+      words,
+    };
+  } catch (error) {
+    log.warn(
+      { err: error instanceof Error ? error.message : "unknown" },
+      "Transcription failed; the clip will be rendered without captions",
+    );
+    return { text: "", words: [] };
+  }
 }
