@@ -79,3 +79,21 @@ test("upgrades an old database and marks interrupted renders", async () => {
   assert.equal(rows.find((row) => row.id === "b")?.hypeScore, 60);
   repo.close();
 });
+
+test("stores the QA result and counts review clips toward the monthly quota", async () => {
+  const repo = new SqliteClipRepository(tempDir());
+  const qa = {
+    version: 1 as const,
+    enabled: true,
+    passed: false,
+    checkedAt: "2026-11-24T00:00:00.000Z",
+    checks: [{ id: "title" as const, passed: false, reasons: ["template fallback"], metrics: {} }],
+    failed: ["title" as const],
+  };
+  await repo.saveClip(clip({ status: "review", qa, errorMessage: "QA review: title" }));
+  const [row] = await repo.listRecentClips(5);
+  assert.equal(row?.status, "review");
+  assert.deepEqual(row?.qa, qa);
+  assert.equal(await repo.countClipsSince("2026-11-01T00:00:00.000Z"), 1);
+  repo.close();
+});

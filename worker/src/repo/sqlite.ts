@@ -1,7 +1,13 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { CandidateMoment, ClipRecord, MomentKind, WatchedStream } from "@gta6-clipper/shared";
+import type {
+  CandidateMoment,
+  ClipQaSummary,
+  ClipRecord,
+  MomentKind,
+  WatchedStream,
+} from "@gta6-clipper/shared";
 import type { ClipperRepository } from "./interface";
 
 export class SqliteClipRepository implements ClipperRepository {
@@ -63,6 +69,7 @@ export class SqliteClipRepository implements ClipperRepository {
       highlight_end_at: "TEXT",
       peak_offset_seconds: "REAL",
       hype_score: "INTEGER",
+      qa: "TEXT",
     });
   }
 
@@ -126,8 +133,8 @@ export class SqliteClipRepository implements ClipperRepository {
   async saveClip(clip: ClipRecord): Promise<void> {
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO clips (id, moment_id, channel_login, layout, source_path, output_path, poster_path, started_at, duration_seconds, hook_title, status, error_message, created_at, clip_type, event_at, peak_at, highlight_start_at, highlight_end_at, peak_offset_seconds, hype_score)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO clips (id, moment_id, channel_login, layout, source_path, output_path, poster_path, started_at, duration_seconds, hook_title, status, error_message, created_at, clip_type, event_at, peak_at, highlight_start_at, highlight_end_at, peak_offset_seconds, hype_score, qa)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         clip.id,
@@ -150,6 +157,7 @@ export class SqliteClipRepository implements ClipperRepository {
         clip.highlightEndAt ?? null,
         clip.peakOffsetSeconds ?? null,
         clip.hypeScore ?? null,
+        clip.qa ? JSON.stringify(clip.qa) : null,
       );
   }
 
@@ -200,7 +208,7 @@ export class SqliteClipRepository implements ClipperRepository {
   async countClipsSince(isoTimestamp: string): Promise<number> {
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM clips WHERE created_at >= ? AND status IN ('ready', 'rendering')`,
+        `SELECT COUNT(*) AS n FROM clips WHERE created_at >= ? AND status IN ('ready', 'review', 'rendering')`,
       )
       .get(isoTimestamp) as { n: number } | undefined;
     return Number(row?.n ?? 0);
@@ -234,5 +242,6 @@ export function clipHighlightFromRow(row: Record<string, unknown>): Partial<Clip
     ...(row.hype_score !== null && row.hype_score !== undefined
       ? { hypeScore: Number(row.hype_score) }
       : {}),
+    ...(typeof row.qa === "string" && row.qa ? { qa: JSON.parse(row.qa) as ClipQaSummary } : {}),
   };
 }

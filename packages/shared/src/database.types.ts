@@ -27,6 +27,7 @@ export type Database = {
           peak_at: string | null;
           peak_offset_seconds: number | null;
           poster_path: string | null;
+          qa: Json | null;
           source_path: string;
           started_at: string;
           status: string;
@@ -50,6 +51,7 @@ export type Database = {
           peak_at?: string | null;
           peak_offset_seconds?: number | null;
           poster_path?: string | null;
+          qa?: Json | null;
           source_path: string;
           started_at: string;
           status: string;
@@ -73,6 +75,7 @@ export type Database = {
           peak_at?: string | null;
           peak_offset_seconds?: number | null;
           poster_path?: string | null;
+          qa?: Json | null;
           source_path?: string;
           started_at?: string;
           status?: string;

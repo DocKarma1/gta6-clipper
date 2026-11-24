@@ -69,7 +69,16 @@ export {
   normalizeLogin,
   type AutoSettings,
 } from "./auto-settings";
-export type { CandidateMoment, ChatEvent, ClipRecord, MomentKind, WatchedStream } from "./moments";
+export type {
+  CandidateMoment,
+  ChatEvent,
+  ClipQaCheck,
+  ClipQaSummary,
+  ClipRecord,
+  ClipStatus,
+  MomentKind,
+  WatchedStream,
+} from "./moments";
 
 export {
   CAPTION_STYLE_IDS,

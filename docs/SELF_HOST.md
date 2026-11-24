@@ -78,6 +78,11 @@ npm run worker:auto
 
 For a timed test, set `AUTO_RUN_SECONDS=600 npm run worker:auto`. The worker stops by itself.
 
+Every rendered clip goes through the QA review gate: it is `ready` only if the highlight, title,
+captions/credit, and format checks pass; otherwise it is `review` with the reasons. Check existing
+clips with `npm run qa -- data/clips` (read-only). Thresholds and `QA_GATE=off` are in
+`.env.example`; details in [QA_GATE.md](QA_GATE.md).
+
 ## 4. Autostart
 
 The worker is safe to start at boot. It waits for the network and retries Helix and streamlink.
