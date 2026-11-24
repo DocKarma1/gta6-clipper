@@ -25,6 +25,8 @@ export type TitleInput = {
   language?: CopyLanguage;
   /** question_reply clips: the question the streamer asked. */
   questionText?: string;
+  /** Trend layer: search phrases this clip matched (e.g. "gta 6 police chase"). */
+  trendTopics?: string[];
 };
 
 const log = getLogger("worker.titles");
@@ -116,6 +118,11 @@ export function buildCopyPrompt(input: TitleInput): { system: string; prompt: st
       "hook: max 32 characters, ALL CAPS, for an on-screen overlay.",
       "title: max 90 characters. description: 1-2 sentences, max 300 characters, with the transcript's key line cleaned up (fix punctuation and casing).",
       "hashtags: 4-8 tags without #, always include GTA6.",
+      ...(input.trendTopics?.length
+        ? [
+            "If a searchable topic fits what actually happens, reuse its wording in the title or hashtags so viewers searching for it find the clip. Ignore topics that do not fit; never add events for them.",
+          ]
+        : []),
     ].join("\n"),
     prompt: [
       `Streamer: ${input.channelLogin} (twitch.tv/${input.channelLogin})`,
@@ -125,6 +132,9 @@ export function buildCopyPrompt(input: TitleInput): { system: string; prompt: st
         ? [`The streamer asked chat: ${truncate(input.questionText, 160)}`]
         : []),
       `Transcript: ${truncate(input.transcript || "none", 700)}`,
+      ...(input.trendTopics?.length
+        ? [`Searchable topics: ${input.trendTopics.slice(0, 4).join(", ")}`]
+        : []),
     ].join("\n"),
   };
 }

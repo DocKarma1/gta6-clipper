@@ -13,6 +13,9 @@ import {
 } from "@gta6-clipper/shared";
 import { transcribeClip, type Transcript } from "../ai/transcribe";
 import { writeTitles, type TitlePack } from "../ai/titles";
+import type { OllamaClient } from "../ai/ollama";
+import { scoreClipTrends, searchableTopics, type TrendEvaluation } from "../trends/score";
+import type { TrendProvider } from "../trends/store";
 import { type FacecamDetector, shouldUseFacecam, type FacecamDetection } from "../detect/facecam";
 import { alignWordsToWindow, snapWindow, type ClipWindow } from "../detect/highlight";
 import {
@@ -42,12 +45,20 @@ export type ClipJobInput = {
   streamTitle?: string;
   transcribe?: (filePath: string) => Promise<Transcript>;
   titles?: typeof writeTitles;
+  /** Trend layer (TRENDS_ENABLED). Absent = reaction-only, exactly as before. */
+  trends?: TrendProvider | undefined;
+  /** Optional Ollama tagging of transcripts with trend topics (TRENDS_OLLAMA). */
+  trendOllama?: OllamaClient | undefined;
 };
 
 export type ClipJobResult = {
   record: ClipRecord;
   sidecarPath: string;
   titles: TitlePack[];
+  /** Trend scores when the trend layer ran. */
+  trend?: TrendEvaluation;
+  /** Set when a trend gate skipped the clip before rendering; nothing was written. */
+  skipped?: string;
 };
 
 /** `ohnepixel_20261123-153425_spike_9312694b` */
@@ -183,6 +194,43 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
   );
   const windowText = words.map((word) => word.text).join(" ");
 
+  // 3b. Trends: match what was said (and why chat reacted) to GTA 6 search terms.
+  let trend: TrendEvaluation | undefined;
+  if (input.trends) {
+    try {
+      trend = await scoreClipTrends(
+        {
+          transcript: windowText || transcript.text,
+          reasons: moment.reasons,
+          reactionScore: moment.hypeScore,
+        },
+        {
+          topics: await input.trends.getTopics(),
+          settings: settings.trends,
+          ollama: input.trendOllama,
+        },
+      );
+    } catch {
+      trend = undefined;
+    }
+    if (trend?.decision === "skip") {
+      log.info(
+        {
+          channel: moment.channelLogin,
+          reactionScore: trend.reactionScore,
+          trendScore: trend.trendScore,
+          reason: trend.skipReason,
+        },
+        "Skipped a highlight on the trend gate",
+      );
+      if (!settings.keepRaw) await rm(source.path, { force: true });
+      record.status = "failed";
+      record.errorMessage = `Skipped: ${trend.skipReason ?? "trend gate"}`;
+      return { record, sidecarPath, titles: [], trend, skipped: record.errorMessage };
+    }
+  }
+  const trendTopics = trend ? searchableTopics(trend.matches) : [];
+
   // 4. Copy (Ollama or templates).
   const titles = await (input.titles ?? writeTitles)({
     planId: settings.planId,
@@ -191,6 +239,7 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
     channelLogin: moment.channelLogin,
     reasons: moment.reasons,
     ...(moment.questionText ? { questionText: moment.questionText } : {}),
+    ...(trendTopics.length ? { trendTopics } : {}),
   });
   const pack = titles[0];
   record.hookTitle = pack?.title ?? "";
@@ -253,6 +302,23 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
         snapped: { start: snapped.snappedStart, end: snapped.snappedEnd },
         chatDelaySeconds: settings.chatDelaySeconds,
       },
+      ...(trend
+        ? {
+            trend: {
+              reactionScore: trend.reactionScore,
+              trendScore: trend.trendScore,
+              boost: trend.boost,
+              combinedScore: trend.combinedScore,
+              weight: settings.trends.weight,
+              matches: trend.matches.slice(0, 6).map((match) => ({
+                topic: match.label,
+                via: match.via,
+                confidence: match.confidence,
+                topicWeight: match.topicWeight,
+              })),
+            },
+          }
+        : {}),
       media: {
         width: 1080,
         height: 1920,
@@ -291,7 +357,7 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
     record.errorMessage = error instanceof Error ? error.message.slice(0, 500) : "Render failed";
     log.warn({ channel: moment.channelLogin, err: record.errorMessage }, "Clip render failed");
   }
-  return { record, sidecarPath, titles };
+  return { record, sidecarPath, titles, ...(trend ? { trend } : {}) };
 }
 
 function clamp(value: number, min: number, max: number): number {

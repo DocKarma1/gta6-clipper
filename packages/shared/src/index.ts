@@ -68,6 +68,7 @@ export {
   resetAutoSettingsCache,
   normalizeLogin,
   type AutoSettings,
+  type TrendSettings,
 } from "./auto-settings";
 export type { CandidateMoment, ChatEvent, ClipRecord, MomentKind, WatchedStream } from "./moments";
 

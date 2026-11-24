@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test src/**/*.test.ts",
-    "worker:auto": "tsx src/auto/index.ts"
+    "worker:auto": "tsx src/auto/index.ts",
+    "trends": "tsx src/trends/cli.ts"
   },
   "dependencies": {
     "@gta6-clipper/shared": "*",

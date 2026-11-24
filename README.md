@@ -83,6 +83,7 @@ The worker will not capture streams or render clips until those phases are built
 - Twitch and YouTube official APIs: $0 within rate limits / quota.
 - Captions: self-hosted faster-whisper, and only on the cut clip, not the whole stream.
 - Titles: Ollama on the same PC (`OLLAMA_URL`, `OLLAMA_MODEL`), with template fallback.
+- Trend-aware scoring (opt-in, `TRENDS_ENABLED=true`): free YouTube/Google autocomplete for GTA 6 search terms, cached 6 h, curated offline fallback. Boosts clips whose transcript matches what viewers search and feeds those phrases to the title prompt. See `docs/ARCHITECTURE.md`.
 - Auth and database: Supabase Free (note: free projects pause after one week idle).
 - Storage: Cloudflare R2 free tier (10 GB-month, 1 million Class A, 10 million Class B, $0 egress).
 - Frontend: Vercel Hobby **or** Cloudflare Pages during non-commercial development.
