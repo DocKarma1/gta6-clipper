@@ -42,7 +42,8 @@ export type ClipRecord = {
   startedAt: string;
   durationSeconds: number;
   hookTitle: string;
-  status: "rendering" | "ready" | "failed";
+  /** "review": rendered but held back by the QA gate (see worker/src/qa). */
+  status: ClipStatus;
   errorMessage: string | undefined;
   createdAt: string;
   /** Estimated on-screen time of the event (chat onset minus chat delay). */
@@ -55,6 +56,29 @@ export type ClipRecord = {
   peakOffsetSeconds?: number;
   hypeScore?: number;
   clipType?: MomentKind;
+  /** QA gate result; only clips with status "ready" and qa.passed may be published. */
+  qa?: ClipQaSummary;
+};
+
+export type ClipStatus = "rendering" | "ready" | "review" | "failed";
+
+export type ClipQaCheck = {
+  id: "highlight" | "title" | "captions" | "format";
+  passed: boolean;
+  /** Human-readable reasons; empty when the check passed. */
+  reasons: string[];
+  metrics: Record<string, number | string | boolean | null>;
+};
+
+export type ClipQaSummary = {
+  version: 1;
+  /** false when QA_GATE=off; such clips are never publishable. */
+  enabled: boolean;
+  passed: boolean;
+  checkedAt: string;
+  checks: ClipQaCheck[];
+  /** ids of the failed checks, for quick filtering. */
+  failed: ClipQaCheck["id"][];
 };
 
 export type WatchedStream = {

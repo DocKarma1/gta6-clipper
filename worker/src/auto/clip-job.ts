@@ -13,6 +13,7 @@ import {
 } from "@gta6-clipper/shared";
 import { transcribeClip, type Transcript } from "../ai/transcribe";
 import { writeTitles, type TitlePack } from "../ai/titles";
+import { applyQaGate, type QaGateFn } from "../qa/hook";
 import { type FacecamDetector, shouldUseFacecam, type FacecamDetection } from "../detect/facecam";
 import { alignWordsToWindow, snapWindow, type ClipWindow } from "../detect/highlight";
 import {
@@ -42,6 +43,8 @@ export type ClipJobInput = {
   streamTitle?: string;
   transcribe?: (filePath: string) => Promise<Transcript>;
   titles?: typeof writeTitles;
+  /** QA gate (tests inject a fake); defaults to runQaGate. */
+  qaGate?: QaGateFn;
 };
 
 export type ClipJobResult = {
@@ -80,6 +83,7 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
   const outputPath = `${base}.mp4`;
   const posterPath = `${base}.jpg`;
   const sidecarPath = `${base}.json`;
+  const assPath = `${base}.ass`;
   const probed = await probeVideo(source.path);
   const fileEndMs = source.fileStartMs + (probed?.duration ?? 0) * 1000;
 
@@ -206,6 +210,7 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
       layout,
       words,
       credit: { login: moment.channelLogin },
+      assOutputPath: assPath,
       durationSeconds,
       trimStartSeconds,
       ...(probed?.size ? { source: probed.size } : {}),
@@ -219,8 +224,22 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
     if (!posterOk) record.posterPath = undefined;
     const outputLufs = await measureIntegratedLufs(outputPath);
     const rendered = await probeVideo(outputPath);
-    record.status = "ready";
     if (rendered?.duration) record.durationSeconds = Number(rendered.duration.toFixed(3));
+    // QA gate decides "ready" vs "review" (worker/src/qa).
+    await applyQaGate(
+      record,
+      {
+        videoPath: outputPath,
+        assPath,
+        channelLogin: moment.channelLogin,
+        transcript: windowText || transcript.text,
+        reasons: moment.reasons,
+        questionText: moment.questionText,
+        copy: titles,
+        credit: `twitch.tv/${moment.channelLogin}`,
+      },
+      input.qaGate,
+    );
     await writeSidecarAtomic(sidecarPath, {
       version: 2,
       clipId: record.id,
@@ -230,6 +249,7 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
       files: {
         video: path.basename(outputPath),
         thumbnail: record.posterPath ? path.basename(posterPath) : null,
+        captions: path.basename(assPath),
       },
       highlight: {
         eventAt: record.eventAt,
@@ -281,6 +301,8 @@ export async function runClipJob(input: ClipJobInput): Promise<ClipJobResult> {
       transcript: windowText,
       language: transcript.language ?? null,
       createdAt: record.createdAt,
+      status: record.status,
+      qa: record.qa ?? null,
     });
     if (!settings.keepRaw) {
       await rm(source.path, { force: true });

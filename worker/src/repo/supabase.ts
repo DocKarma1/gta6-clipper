@@ -2,12 +2,16 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ConfigError,
   getConfig,
+  getLogger,
   type CandidateMoment,
   type ClipRecord,
   type MomentKind,
   type WatchedStream,
 } from "@gta6-clipper/shared";
+import { isQaMigrationMissing, legacyClipRow } from "../qa/db-compat";
 import type { ClipperRepository } from "./interface";
+
+const log = getLogger("worker.supabase");
 
 export function createSupabaseAdmin(): SupabaseClient {
   const config = getConfig();
@@ -74,7 +78,7 @@ export class SupabaseClipRepository implements ClipperRepository {
   }
 
   async saveClip(clip: ClipRecord): Promise<void> {
-    const { error } = await this.client.from("clips").upsert({
+    const row = {
       ...this.scoped(),
       id: clip.id,
       moment_id: clip.momentId,
@@ -96,7 +100,16 @@ export class SupabaseClipRepository implements ClipperRepository {
       highlight_end_at: clip.highlightEndAt ?? null,
       peak_offset_seconds: clip.peakOffsetSeconds ?? null,
       hype_score: clip.hypeScore ?? null,
-    });
+      qa: clip.qa ?? null,
+    };
+    const { error } = await this.client.from("clips").upsert(row);
+    if (error && isQaMigrationMissing(error)) {
+      // QA migration not applied yet: store a pre-migration row ("review" -> "failed").
+      log.warn("clips.qa / status 'review' missing in Supabase; apply the QA migration");
+      const retry = await this.client.from("clips").upsert(legacyClipRow(row));
+      if (retry.error) throw retry.error;
+      return;
+    }
     if (error) throw error;
   }
 
@@ -151,6 +164,7 @@ export class SupabaseClipRepository implements ClipperRepository {
       ...(row.highlight_end_at ? { highlightEndAt: row.highlight_end_at } : {}),
       ...(row.peak_offset_seconds != null ? { peakOffsetSeconds: row.peak_offset_seconds } : {}),
       ...(row.hype_score != null ? { hypeScore: row.hype_score } : {}),
+      ...(row.qa ? { qa: row.qa } : {}),
     }));
   }
 
@@ -159,7 +173,7 @@ export class SupabaseClipRepository implements ClipperRepository {
       .from("clips")
       .select("id", { count: "exact", head: true })
       .gte("created_at", isoTimestamp)
-      .in("status", ["ready", "rendering"])
+      .in("status", ["ready", "review", "rendering"])
       .match(this.scoped());
     if (error) throw error;
     return count ?? 0;

@@ -9,6 +9,7 @@ function formatTime(iso: string): string {
 export default function QueuePage() {
   const clips = readLocalClips(40).map(toPublicClip);
   const ready = clips.filter((clip) => clip.status === "ready").length;
+  const review = clips.filter((clip) => clip.status === "review").length;
 
   return (
     <>
@@ -22,7 +23,7 @@ export default function QueuePage() {
         <p className="muted">
           {clips.length === 0
             ? "No clips in the queue yet. Run the auto worker to capture and render moments."
-            : `${ready} ready of ${clips.length} stored clips.`}
+            : `${ready} ready, ${review} held for QA review, of ${clips.length} stored clips.`}
         </p>
       </section>
       {clips.length === 0 ? (

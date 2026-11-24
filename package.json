@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "worker:auto": "npm run worker:auto --workspace=worker"
+    "worker:auto": "npm run worker:auto --workspace=worker",
+    "qa": "npm run qa --workspace=worker --"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
