@@ -70,7 +70,44 @@ const autoSchema = z.object({
   DATA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   STREAMLINK_PATH: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   AUTO_PLAN: z.preprocess(emptyToUndefined, z.enum(["starter", "pro", "studio"]).optional()),
+  TRENDS_ENABLED: boolFromEnv,
+  TREND_WEIGHT: z.coerce.number().min(0).max(1).default(0.25),
+  TREND_MIN_SCORE: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100).optional()),
+  TREND_MIN_COMBINED_SCORE: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().min(0).max(200).optional(),
+  ),
+  TRENDS_TTL_HOURS: z.coerce.number().min(0.25).max(168).default(6),
+  TRENDS_OLLAMA: boolFromEnv,
+  TRENDS_SEEDS: z.preprocess((value) => {
+    const v = emptyToUndefined(value);
+    if (typeof v !== "string") return v;
+    return v
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+  }, z.array(z.string()).optional()),
+  TRENDS_LANGUAGE: z.preprocess(emptyToUndefined, z.string().min(2).max(10).default("en")),
 });
+
+/** Search/trend-aware clip scoring (worker/src/trends). Off unless TRENDS_ENABLED=true. */
+export type TrendSettings = {
+  enabled: boolean;
+  /** Boost = weight x trend score (0-100), added on top of the chat reaction score. */
+  weight: number;
+  /** Skip clips whose trend score is below this. Unset = never filter on trends alone. */
+  minScore: number | undefined;
+  /** Skip clips whose reaction + boost is below this. Unset = no combined gate. */
+  minCombinedScore: number | undefined;
+  /** How long fetched search terms stay fresh in data/trends-cache.json. */
+  ttlMs: number;
+  /** Ask Ollama to tag transcripts with trend topics (slow models: keep off). */
+  useOllama: boolean;
+  /** Autocomplete seed queries; empty = built-in GTA 6 seeds. */
+  seeds: string[];
+  /** hl= for autocomplete. */
+  language: string;
+};
 
 export type AutoSettings = {
   topK: number;
@@ -108,6 +145,7 @@ export type AutoSettings = {
   dataDir: string;
   streamlinkPath: string;
   planId: PlanId;
+  trends: TrendSettings;
 };
 
 function formatIssues(error: z.ZodError): string {
@@ -157,6 +195,16 @@ export function getAutoSettings(): AutoSettings {
     dataDir,
     streamlinkPath: env.STREAMLINK_PATH ?? defaultStreamlink,
     planId: env.AUTO_PLAN && isPlanId(env.AUTO_PLAN) ? env.AUTO_PLAN : "starter",
+    trends: {
+      enabled: env.TRENDS_ENABLED ?? false,
+      weight: env.TREND_WEIGHT,
+      minScore: env.TREND_MIN_SCORE,
+      minCombinedScore: env.TREND_MIN_COMBINED_SCORE,
+      ttlMs: Math.round(env.TRENDS_TTL_HOURS * 3_600_000),
+      useOllama: env.TRENDS_OLLAMA ?? false,
+      seeds: env.TRENDS_SEEDS ?? [],
+      language: env.TRENDS_LANGUAGE,
+    },
   };
   cached.topK = effectiveStreamCap(cached);
   return cached;

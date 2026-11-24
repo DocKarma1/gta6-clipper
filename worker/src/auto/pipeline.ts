@@ -1,6 +1,9 @@
 import path from "node:path";
 import { readdir, rm } from "node:fs/promises";
 import {
+  canUseAiTitles,
+  getConfig,
+  getOllamaSettings,
   assertCaptionStyle,
   assertClipsThisMonth,
   capConcurrentStreams,
@@ -26,6 +29,8 @@ import { transcribeClip } from "../ai/transcribe";
 import { FacecamDetector } from "../detect/facecam";
 import type { ClipWindow } from "../detect/highlight";
 import type { ClipperRepository } from "../repo/interface";
+import { OllamaClient } from "../ai/ollama";
+import { TrendStore } from "../trends/store";
 import { runClipJob } from "./clip-job";
 import { selectStreams, type SelectedStream } from "./select";
 import { windowForQuestion, windowForSpike, windowOverlap } from "./windows";
@@ -38,6 +43,8 @@ export type PipelineOptions = {
   facecamByChannel?: Record<string, CropRect>;
   facecamDetector?: FacecamDetector;
   sampleOutputDir?: string;
+  /** Test hook; otherwise built from settings.trends when TRENDS_ENABLED=true. */
+  trendStore?: TrendStore;
 };
 
 /** Small FIFO semaphore so a home PC renders one (or N) clips at a time. */
@@ -68,6 +75,8 @@ export class AutoPipeline {
   private readonly speechUntil = new Map<string, number>();
   private readonly facecam: FacecamDetector;
   private readonly renders: Limiter;
+  private readonly trends: TrendStore | undefined;
+  private readonly trendOllama: OllamaClient | undefined;
   private selected: SelectedStream[] = [];
   private timers: NodeJS.Timeout[] = [];
   private speechBusy = false;
@@ -83,6 +92,27 @@ export class AutoPipeline {
         cachePath: path.join(options.settings.dataDir, "facecam-cache.json"),
       });
     this.renders = new Limiter(options.settings.renderConcurrency);
+    const trendSettings = options.settings.trends;
+    if (trendSettings.enabled) {
+      this.trends =
+        options.trendStore ??
+        new TrendStore({
+          cachePath: path.join(options.settings.dataDir, "trends-cache.json"),
+          ttlMs: trendSettings.ttlMs,
+          language: trendSettings.language,
+          youtubeSeeds: trendSettings.seeds,
+          youtubeApiKey: optionalYouTubeKey(),
+        });
+      if (trendSettings.useOllama && canUseAiTitles(options.settings.planId)) {
+        const ollama = getOllamaSettings();
+        this.trendOllama = new OllamaClient({
+          baseUrl: ollama.url,
+          model: ollama.model,
+          timeoutMs: ollama.timeoutMs,
+          retries: 0,
+        });
+      }
+    }
     this.irc = new TwitchAnonymousIrc({
       onChat: (event) => {
         this.questions.get(event.channelLogin)?.ingest(event);
@@ -99,6 +129,8 @@ export class AutoPipeline {
   async start(): Promise<void> {
     this.running = true;
     await this.recoverFromCrash();
+    // Warm the trend cache in the background; clip jobs never wait on the network for long.
+    if (this.trends) void this.trends.getTopics();
     this.irc.start();
     await this.refreshSelection();
     const { settings } = this.options;
@@ -129,6 +161,14 @@ export class AutoPipeline {
         speechQuestionSeconds: settings.speechQuestionSeconds,
         writeLocalOnly: settings.writeLocalOnly,
         pollIntervalMs: settings.pollIntervalMs,
+        trends: settings.trends.enabled
+          ? {
+              weight: settings.trends.weight,
+              minScore: settings.trends.minScore ?? null,
+              minCombinedScore: settings.trends.minCombinedScore ?? null,
+              ollama: Boolean(this.trendOllama),
+            }
+          : false,
       },
       "Auto worker started",
     );
@@ -368,8 +408,11 @@ export class AutoPipeline {
         facecam: this.facecam,
         facecamOverride: this.options.facecamByChannel?.[normalizeLogin(moment.channelLogin)],
         streamTitle,
+        trends: this.trends,
+        trendOllama: this.trendOllama,
       }),
     );
+    if (result.skipped) return;
     this.clips.push(result.record);
     await this.options.repository.saveClip(result.record);
     log.info(
@@ -378,9 +421,26 @@ export class AutoPipeline {
         status: result.record.status,
         outputPath: result.record.outputPath,
         durationSeconds: result.record.durationSeconds,
+        ...(result.trend
+          ? {
+              reactionScore: result.trend.reactionScore,
+              trendScore: result.trend.trendScore,
+              combinedScore: result.trend.combinedScore,
+              trendTopics: result.trend.matches.slice(0, 3).map((match) => match.label),
+            }
+          : {}),
       },
       "Finished a local clip job",
     );
+  }
+}
+
+/** YOUTUBE_API_KEY enables the optional Data API trend source; never logged. */
+function optionalYouTubeKey(): string | undefined {
+  try {
+    return getConfig().YOUTUBE_API_KEY;
+  } catch {
+    return undefined;
   }
 }
 
